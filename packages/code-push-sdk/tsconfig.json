@@ -1,0 +1,4 @@
+{
+  "include": ["harmony/**/*.ts", "harmony/oh_modules/**/*.ts", "harmony/codePush/oh_modules/**/*.ts"],
+  "exclude": ["**/__mocks__/*", "**/__tests__/*", "**/__rsc_tests__/*"]
+}

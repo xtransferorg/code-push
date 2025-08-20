@@ -1,0 +1,9 @@
+{
+  module: {
+    name: 'codePush',
+    type: 'har',
+    deviceTypes: [
+      'default'
+    ],
+  }
+}

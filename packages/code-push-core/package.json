@@ -1,0 +1,59 @@
+{
+  "name": "@xrnjs/code-push-core",
+  "version": "0.0.1",
+  "description": "Management SDK for the CodePush service",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xtransferorg/code-push.git"
+  },
+  "author": "Microsoft Corporation",
+  "license": "Apache 2.0",
+  "homepage": "https://github.com/xtransferorg/code-push",
+  "dependencies": {
+    "q": "^1.4.1",
+    "recursive-fs": "0.1.4",
+    "slash": "1.0.0",
+    "superagent": "^3.8.0",
+    "superagent-proxy": "^1.0.3",
+    "yazl": "^2.4.1"
+  },
+  "devDependencies": {
+    "chmod": "^0.2.1",
+    "del": "^1.2.0",
+    "dotenv": "^1.2.0",
+    "dts-generator": "1.5.0",
+    "express": "^4.13.1",
+    "gulp": "^3.9.0",
+    "gulp-debug": "^2.0.1",
+    "gulp-if": "^1.2.5",
+    "gulp-install": "^0.4.0",
+    "gulp-istanbul": "^0.10.0",
+    "gulp-load-plugins": "^1.0.0-rc.1",
+    "gulp-mocha": "^6.0.0",
+    "gulp-plumber": "^1.0.1",
+    "gulp-sourcemaps": "^2.6.4",
+    "gulp-tsd": "0.0.4",
+    "gulp-typescript": "^2.7.8",
+    "gulp-util": "^3.0.6",
+    "merge2": "^0.3.6",
+    "mkdirp": "^0.5.1",
+    "moment": "^2.21.0",
+    "node-libs-browser": "^0.5.2",
+    "node-rsa": "^0.2.24",
+    "require-all": "^1.1.0",
+    "run-sequence": "^1.1.2",
+    "sinon": "1.16.0",
+    "superagent-mock": "^3.7.0",
+    "supertest": "^3.1.0",
+    "through2": "^2.0.0",
+    "ts-jsx-loader": "^0.2.1",
+    "typescript": "^4.9.5",
+    "which": "^1.1.1",
+    "yauzl": "^2.6.0"
+  }
+}

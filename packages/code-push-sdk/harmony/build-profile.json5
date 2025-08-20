@@ -1,0 +1,59 @@
+{
+  app: {
+    signingConfigs: [
+      {
+        name: 'xtdebug',
+        type: 'HarmonyOS',
+        material: {
+          storePassword: '0000001A57FAE5DB5946DBF8892827FA010102E2B1C9A0BE0F3F5B520058452D059FE68B40E99290FD16',
+          certpath: './xt-debug.cer',
+          keyAlias: 'xtappdebug',
+          keyPassword: '0000001A3196885512B122B70E959B6206CC9045F46E4836ABF12828893ACBA6F5ADD0E7076A43E711FE',
+          profile: './xtdebugDebug.p7b',
+          signAlg: 'SHA256withECDSA',
+          storeFile: './xtdebug.p12',
+        },
+      },
+    ],
+    products: [
+      {
+        name: 'default',
+        signingConfig: 'xtdebug',
+        compatibleSdkVersion: '5.0.0(12)',
+        runtimeOS: 'HarmonyOS',
+        buildOption: {
+          strictMode: {
+            caseSensitiveCheck: true,
+            useNormalizedOHMUrl: false,
+          },
+        },
+      },
+    ],
+    buildModeSet: [
+      {
+        name: 'debug',
+      },
+      {
+        name: 'release',
+      },
+    ],
+  },
+  modules: [
+    {
+      name: 'entry',
+      srcPath: './entry',
+      targets: [
+        {
+          name: 'default',
+          applyToProducts: [
+            'default',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'codePush',
+      srcPath: './codePush',
+    }
+  ],
+}

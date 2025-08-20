@@ -1,0 +1,70 @@
+{
+  "name": "@xrnjs/code-push-cli",
+  "version": "0.0.1",
+  "description": "Management CLI for the CodePush service",
+  "main": "bin/cli.js",
+  "scripts": {
+    "start": "npm run build && npm unlink -g @xrnjs/code-push-cli && npm link",
+    "build": "rm -rf bin && tsc",
+    "release": "npm test && npm run build && standard-version && git push --follow-tags origin master && npm publish",
+    "test": "echo 'no tests'"
+  },
+  "bin": {
+    "code-push": "bin/cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xtransferorg/code-push.git"
+  },
+  "homepage": "https://github.com/xtransferorg/code-push",
+  "files": [
+    "bin/"
+  ],
+  "keywords": [
+    "code",
+    "push",
+    "cordova",
+    "react-native",
+    "react"
+  ],
+  "author": "XTransfer",
+  "license": "Apache 2.0",
+  "dependencies": {
+    "backslash": "0.2.0",
+    "chalk": "4.1.2",
+    "cli-table3": "0.6.2",
+    "@xrnjs/code-push-core": "workspace:*",
+    "email-validator": "2.0.4",
+    "gradle-to-js": "2.0.1",
+    "jsonwebtoken": "8.5.1",
+    "mkdirp": "1.0.4",
+    "moment": "2.29.4",
+    "opener": "1.5.2",
+    "parse-duration": "1.0.2",
+    "plist": "3.0.5",
+    "progress": "2.0.3",
+    "prompt": "1.3.0",
+    "properties": "1.2.1",
+    "recursive-fs": "2.1.0",
+    "rimraf": "3.0.2",
+    "semver": "7.3.7",
+    "simctl": "2.0.3",
+    "slash": "3.0.0",
+    "update-notifier": "5.1.0",
+    "which": "2.0.2",
+    "wordwrap": "1.0.0",
+    "xml2js": "0.4.23",
+    "yargs": "17.5.1",
+    "yazl": "2.5.1"
+  },
+  "devDependencies": {
+    "@shm-open/eslint-config-bundle": "1.9.13",
+    "@types/node": "16.11.45",
+    "@types/semver": "7.3.10",
+    "@types/which": "2.0.1",
+    "@types/yargs": "17.0.10",
+    "@types/yazl": "2.4.2",
+    "standard-version": "9.5.0",
+    "typescript": "4.7.4"
+  }
+}

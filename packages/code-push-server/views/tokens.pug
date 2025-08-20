@@ -1,0 +1,71 @@
+extends common
+
+block content
+  h1(style="text-align: center;")= title
+  .site-notice
+    a#submitBtn.btn.btn-lg.btn-primary #{__('Obtain')} token
+  .form-group
+    #tipsSuccess(style="display:none")
+      h2(style="text-align: center;") Authentication succeeded.
+      h2(style="text-align: center;") Please copy and paste this access key to the command window:
+  .form-group
+    .col-sm-offset-3.col-sm-6
+      input#key.form-control(style="display:none" readonly)
+  br
+  .form-group
+    #tipsClose(style="display:none")
+      h2(style="text-align: center;") After doing so, please close this browser.
+
+block js
+  script().
+    ensureLogin();
+    var submit = false;
+
+    $('#submitBtn').on('click', function () {
+      if (submit) {
+        return ;
+      }
+      submit = true;
+      var query = parseQuery();
+      var createdBy = query.hostname;
+      var time = (new Date()).getTime();
+      if (createdBy == null || createdBy == undefined || createdBy=="") {
+        createdBy = 'Login-' + time;
+      }
+
+      // TODO: make ttl and friendlyNamee configurable
+      var postParams = {
+        createdBy: createdBy,
+        friendlyName: "Login-" + time,
+        ttl: 60*60*24*30*1000,
+        description: "Login-" + time,
+        isSession: true
+      };
+      var accessToken = getAccessToken();
+      $.ajax({
+        type: 'post',
+        data: postParams,
+        headers: {
+          Authorization : 'Bearer ' + accessToken
+        },
+        url: '/accessKeys',
+        dataType: 'json',
+        success: function (data) {
+          submit = false;
+          $('#tipsSuccess').show();
+          $('#key').val(data.accessKey.name);
+          $('#key').show();
+          $('#tipsClose').show();
+        },
+        error: function(XMLHttpRequest, textStatus, errorThrown) {
+          submit = false;
+          if (errorThrown == 'Unauthorized') {
+            alert(`#{__('please login again')}!`);
+            location.href = '/auth/login'
+          }else {
+            alert(errorThrown);
+          }
+        }
+      });
+    });
+

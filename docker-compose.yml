@@ -1,0 +1,50 @@
+services:
+  code-push-server:
+    build:
+      context: .
+      dockerfile: packages/code-push-server/Dockerfile
+    container_name: code-push-server
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      # MySQL 配置
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: 12345678
+      MYSQL_DATABASE: codepush
+      # Redis 配置
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # 其他可选配置（按需修改）
+      NODE_ENV: production
+    restart: always
+
+  mysql:
+    image: mysql:8.0
+    container_name: code-push-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 12345678
+      MYSQL_DATABASE: codepush
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./packages/code-push-server/sql/codepush-all.sql:/docker-entrypoint-initdb.d/codepush-all.sql:ro
+    restart: always
+
+  redis:
+    image: redis:7.2
+    container_name: code-push-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,0 +1,33 @@
+{
+  "name": "code-push",
+  "description": "code-push",
+  "scripts": {
+    "prettier": "prettier --write packages/**/*.{js,ts}",
+    "build": "pnpm run build:core && pnpm run build:cli && pnpm run build:server",
+    "start:server": "pnpm --filter @xrnjs/code-push-server start",
+    "start:cli": "pnpm --filter @xrnjs/code-push-cli start",
+    "build:core": "pnpm --filter @xrnjs/code-push-core build",
+    "build:cli": "pnpm --filter @xrnjs/code-push-cli build",
+    "build:server": "pnpm --filter @xrnjs/code-push-server build",
+    "prepublishOnly": "pnpm run build",
+    "publish:beta": "pnpm build && pnpm publish --tag beta -r --no-git-checks",
+    "publish:prod": "pnpm build && pnpm publish -r",
+    "prepare": "husky",
+    "lint": "lint-staged",
+    "test": "pnpm test -r"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache 2.0",
+  "lint-staged": {
+		"*.{ts,tsx,js,jsx}": [
+			"prettier --write",
+			"git add"
+		]
+	},
+  "devDependencies": {
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.7",
+    "prettier": "^3.2.5"
+  }
+}

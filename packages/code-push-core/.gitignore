@@ -1,0 +1,22 @@
+dist
+build
+reports
+coverage
+
+# Editor directories and files
+.idea
+.vscode
+
+# Package Manager
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# System
+.DS_Store
+
+# local env files
+*.local
+tmp

@@ -1,0 +1,15 @@
+{
+  "apps": [
+    {
+      "name": "code-push-server",
+      "max_memory_restart": "500M",
+      "script": "packages/code-push-server/bin/www.js",
+      "instances": "max",
+      "exec_mode": "cluster",
+      "env": {
+        "NODE_ENV": "production",
+        "LOCAL_CODE_PUSH_DIR": "/var/data/codepush_cache"
+      }
+    }
+  ]
+}

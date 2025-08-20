@@ -1,0 +1,13 @@
+{
+  "name": "xrn-code-push",
+  "version": "8.2.2-0.0.10",
+  "license": "ISC",
+  "types": "",
+  "devDependencies": {},
+  "description": "",
+  "main": "index.ets",
+  "dependencies": {
+    "@rnoh/react-native-openharmony": "file:../react_native_openharmony",
+    "xrn-multi-bundle": "file:../xrn_multi_bundle"
+  }
+}
