@@ -9,7 +9,6 @@ export enum ErrorCode {
   QUERY_ERROR = 5,
   LOG_ERROR = 6,
   NOT_FOUND = 404,
-  Error = 500,
 }
 
 export class AppError extends Error {

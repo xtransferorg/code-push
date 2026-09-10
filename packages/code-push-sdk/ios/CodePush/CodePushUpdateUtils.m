@@ -260,6 +260,12 @@ NSString * const IgnoreCodePushMetadata = @".codepushrelease";
     }
 }
 
++ (NSString *)dymanicBundleModifiedDateString {
+	NSString *buildNum = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"];
+	CPLog(@"CFBundleVersion：%@", buildNum);
+	return buildNum;
+}
+
 + (BOOL)verifyFolderHash:(NSString *)finalUpdateFolder
                    expectedHash:(NSString *)expectedHash
                           error:(NSError **)error
@@ -272,7 +278,7 @@ NSString * const IgnoreCodePushMetadata = @".codepushrelease";
                                              manifest:updateContentsManifest
                                                 error:error];
     
-    CPLog(@"Manifest string: %@", updateContentsManifest);
+//    CPLog(@"Manifest string: %@", updateContentsManifest);
     
     if (!result) {
         return NO;

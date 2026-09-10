@@ -1,5 +1,5 @@
 {
-  "name": "xrn-code-push",
+  "name": "react-native-code-push-xt",
   "version": "8.2.2-0.0.10",
   "license": "ISC",
   "types": "",
@@ -8,6 +8,7 @@
   "main": "index.ets",
   "dependencies": {
     "@rnoh/react-native-openharmony": "file:../react_native_openharmony",
-    "xrn-multi-bundle": "file:../xrn_multi_bundle"
+    "xrn-multi-bundle": "file:../xrn_multi_bundle",
+    'xrn-modules-core': 'file:../xrn-modules-core/harmony/xrn_modules_core'
   }
 }

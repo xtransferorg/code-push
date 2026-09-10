@@ -29,10 +29,25 @@ export class CodePushTelemetryManager {
     'CODE_PUSH_RETRY_DEPLOYMENT_REPORT'
   private readonly STATUS_KEY: string = 'status'
 
-  constructor(context: Context, deploymentKey: string) {
-    this.preferences = dataPreferences.getPreferencesSync(context, {
-      name: deploymentKey + CodePushConstants.CODE_PUSH_PREFERENCES,
-    })
+  private bundleName: string
+
+  constructor(private context: Context, bundleName: string, deploymentKey: string) {
+    console.log(`[Preload]-CodePushTelemetryManager.constructor:deploymentKey=${deploymentKey}`)
+    this.init(bundleName, deploymentKey)
+  }
+
+  private init(bundleName: string, deploymentKey: string) {
+    console.log(`[Preload]-CodePushTelemetryManager.init:deploymentKey=${deploymentKey}`)
+    if (deploymentKey && !this.preferences) {
+      this.bundleName = bundleName
+      this.preferences = dataPreferences.getPreferencesSync(this.context, {
+        name: deploymentKey + CodePushConstants.CODE_PUSH_PREFERENCES,
+      })
+    }
+  }
+
+  public setBundleInfo(bundleName: string, deploymentKey: string) {
+    this.init(bundleName, deploymentKey)
   }
 
   public getBinaryUpdateReport(

@@ -14,9 +14,54 @@ typedef NS_ENUM(NSInteger, CodePushPatchState) {
     CodePushPatchERROR
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+void CPLog(NSString *formatString, ...);
+#ifdef __cplusplus
+}
+#endif
+
+typedef NS_ENUM(NSInteger, CodePushInstallMode) {
+    CodePushInstallModeImmediate,
+    CodePushInstallModeOnNextRestart,
+    CodePushInstallModeOnNextResume,
+    CodePushInstallModeOnNextSuspend
+};
+
+typedef NS_ENUM(NSInteger, CodePushUpdateState) {
+    CodePushUpdateStateRunning,
+    CodePushUpdateStatePending,
+    CodePushUpdateStateLatest
+};
+
+static NSString *const RollbackFullBundleUpdatePackage = @"patchFailed";
+
+typedef void (^CodePushDownloadCallback)(NSDictionary *localPackage, NSError *error);
+
+typedef void (^CodePushDownloadProgressCallback)(NSUInteger receivedBytes, NSUInteger totalBytes);
+
+typedef void (^CodePushPatchStateCallback)(NSString *state, NSNumber *code);
+
+typedef void(^CodePushGetUpdateMetadataCallback)(NSDictionary *metaData, NSError * error);
+
+typedef void (^CodePushInstallCallback)(NSError *error);
+
+typedef void(^CodePushRestartAppCallback)(BOOL reloadBundleSuccess);
+
+@class CodePushPackage;
+@class CodePushConfig;
+
 @interface CodePush : RCTEventEmitter
 
-- (instancetype)initWithDeploymentKey:(NSString *)deploymentKey;
+- (instancetype)initWithDeploymentKey:(NSString *)deploymentKey isPreDownload:(BOOL)isPreDownload;
+
+@property (nonatomic, strong) CodePushConfig *config;
+
+@property (nonatomic, strong) CodePushPackage *package;
+
+@property (nonatomic, copy) NSString *bundleResourceName;
+@property (nonatomic, copy) NSString *bundleResourceExtension;
 
 - (NSURL *)binaryBundleURL;
 /*
@@ -78,7 +123,7 @@ typedef NS_ENUM(NSInteger, CodePushPatchState) {
  * This information will be used to decide whether the application
  * should ignore the update or not.
  */
-- (NSDictionary*)getRollbackInfo;
+- (NSDictionary*)getLatestRollbackInfo;
 /*
  * This method is used to save information about the latest rollback.
  * This information will be used to decide whether the application
@@ -105,18 +150,109 @@ typedef NS_ENUM(NSInteger, CodePushPatchState) {
 - (void)dispatchPatchStateEvent:(CodePushPatchState)patchState
                            code:(int)code;
 
+
+
+
+// ------(CodePush原生化，Promise异步转同步，方法名称相同，新增Sync后缀)-----
+
+/// Native codepush流程是否正在sync
+@property (nonatomic, assign) BOOL isNativeSync;
+
+// 正在运行的hash，防止静默更新移除pendingUpdate数据
+@property (nonatomic, copy) NSString *runningPackageHash;
+
+
+/// 同步获取CodePush基础配置信息
+- (NSDictionary *)getConfigurationSync;
+
+
+/// 获取本地元数据信息
+/// - Parameter updateState: updateState description
+- (void)getUpdateMetadataSync:(CodePushUpdateState)updateState completion:(CodePushGetUpdateMetadataCallback)completoion;
+
+
+/// 根据packageHash检查是否为失败的更新
+/// - Parameter packageHash: packageHash description
+- (BOOL)isFailedUpdateSync:(NSString *)packageHash;
+
+
+/// 根据packageHash检查是否第一次运行
+/// - Parameter packageHash: packageHash description
+- (BOOL)isFirstRunSync:(NSString *)packageHash;
+
+
+/// bundle挂载成功事件
+- (void)notifyApplicationReadySync;
+
+
+/// 获取最新StatusReport
+- (NSDictionary *)getNewStatusReportSync;
+
+
+/// 获取最新的回滚信息
+- (NSDictionary *)getLatestRollbackInfoSync;
+
+
+/// 设置最新的回滚信息
+/// - Parameter packageHash: packageHash description
+- (void)setLatestRollbackInfoSync:(NSString *)packageHash;
+
+
+/// 上报状态
+/// - Parameter statusReport: statusReport description
+- (void)recordStatusReportedSync:(NSDictionary *)statusReport;
+
+
+/// 重复上报
+/// - Parameter statusReport: statusReport description
+- (void)saveStatusReportForRetrySync:(NSDictionary *)statusReport;
+
+
+/// 下载
+- (void)downloadUpdateSync:(NSDictionary *)updatePackage progress:(CodePushDownloadProgressCallback)progress
+  patchStatus:(CodePushPatchStateCallback)patchStatus
+completion:(CodePushDownloadCallback)completion;
+
+
+/// 安装
+- (void)installUpdateSync:(NSDictionary *)updatePackage installMode:(CodePushInstallMode)installMode minimumBackgroundDuration:(int)minimumBackgroundDuration completion:(CodePushInstallCallback)completion;
+
+
+/// loadbundle
+- (void)restartAppSync:(BOOL)onlyIfUpdateIsPending completion:(CodePushRestartAppCallback)completion;
+
+
+/// 同步dispatch的状态
+- (void)dispatchPatchStateEventSync:(CodePushPatchState)patchState
+                           code:(int)code;
+
+/// codepush初始化检查回滚
+- (void)initializeUpdateAfterRestart;
+
+/// 判断是否是正在运行的packageHash
+- (BOOL)isPendingHash:(NSString *)packageHash;
+
+- (NSDictionary *)pendingUpdateData;
+
 @end
+
+@class CodePushPackage;
 
 @interface CodePushConfig : NSObject
 
+@property (nonatomic, weak) CodePushPackage *package;
+
 @property (copy) NSString *appVersion;
+@property (nonatomic, copy) NSString *clientUniqueId;
 @property (readonly) NSString *buildVersion;
 @property (readonly) NSDictionary *configuration;
 @property (copy) NSString *deploymentKey;
 @property (copy) NSString *serverURL;
 @property (copy) NSString *publicKey;
 @property (readonly, copy) NSString *basePackageHash;
+@property (readonly, copy) NSString *commonHash;
 
+- (NSString *)getBaseHashWithDeploymentKey:(NSString *)deploymentKey;
 @end
 
 @interface CodePushDownloadHandler : NSObject <NSURLConnectionDelegate>
@@ -159,11 +295,40 @@ failCallback:(void (^)(NSError *err))failCallback;
            doneCallback:(void (^)())doneCallback
            failCallback:(void (^)(NSError *err))failCallback;
 
+/// 是否是内置bundle
+- (BOOL)isBinaryBundle;
+
+/// 是否存在动态bundle的基础包
+/// - Parameter updatePackage: updatePackage
+- (BOOL)isExistsBaseBundleFile:(NSDictionary *)updatePackage expectedBundleName:(NSString *)expectedBundleName;
+
+/// 动态bundle最新的diff更新包是否存在
+/// - Parameter updatePackage: updatePackage
+- (BOOL)isExistsDynamicBundleLatestDiffFile:(NSDictionary *)updatePackage expectedBundleName:(NSString *)expectedBundleName;
+
+/// 动态bundle的基础包`basePackageHash`目录
+/// - Parameter updatePackage: updatePackage
+- (NSString *)baseBundleFileFolder:(NSDictionary *)updatePackage;
+
+/// 获取基础包 bundle文件路径
+/// - Parameter updatePackage: updatePackage
+- (NSURL *)getBaseBundleFilePathUrl:(NSDictionary *)updatePackage expectedBundleName:(NSString *)expectedBundleName;
+
+/// 获取基础包bundle文件所在的文件`release_ios`目录
+/// - Parameter updatePackage: updatePackage
+- (NSString *)getBaseBundleReleaseIosFolder:(NSDictionary *)updatePackage;
+
 - (NSDictionary *)getCurrentPackage:(NSError **)error;
 - (NSDictionary *)getPreviousPackage:(NSError **)error;
 - (NSString *)getCurrentPackageFolderPath:(NSError **)error;
 - (NSString *)getCurrentPackageBundlePath:(NSError **)error;
 - (NSString *)getCurrentPackageHash:(NSError **)error;
+
+/// 获取动态bundle的basePackageHash
+/// - Parameter error: error
+- (NSString *)getDynamicBundleBasePackageHash:(NSError **)error;
+
+- (NSMutableDictionary *)getCurrentPackageInfo:(NSError **)error;
 
 - (NSDictionary *)getPackage:(NSString *)packageHash
                        error:(NSError **)error;
@@ -179,6 +344,9 @@ failCallback:(void (^)(NSError *err))failCallback;
 // The below methods are only used during tests.
 - (void)clearUpdates;
 - (void)downloadAndReplaceCurrentBundle:(NSString *)remoteBundleUrl;
+
+
+- (BOOL)bundleFileExists:(NSString *)packageHash expectedBundleName:(NSString *)expectedBundleName;
 
 @end
 
@@ -213,6 +381,9 @@ failCallback:(void (^)(NSError *err))failCallback;
 + (NSString *)manifestFolderPrefix;
 + (NSString *)modifiedDateStringOfFileAtURL:(NSURL *)fileURL;
 
+/// 获取动态bundle的文件修改时间，也就是App构建时间
++ (NSString *)dymanicBundleModifiedDateString;
+
 + (BOOL)isHashIgnoredFor:(NSString *) relativePath;
 
 + (BOOL)verifyFolderHash:(NSString *)finalUpdateFolder
@@ -234,20 +405,3 @@ failCallback:(void (^)(NSError *err))failCallback;
                            error:(NSError **)error;
 
 @end
-
-void CPLog(NSString *formatString, ...);
-
-typedef NS_ENUM(NSInteger, CodePushInstallMode) {
-    CodePushInstallModeImmediate,
-    CodePushInstallModeOnNextRestart,
-    CodePushInstallModeOnNextResume,
-    CodePushInstallModeOnNextSuspend
-};
-
-typedef NS_ENUM(NSInteger, CodePushUpdateState) {
-    CodePushUpdateStateRunning,
-    CodePushUpdateStatePending,
-    CodePushUpdateStateLatest
-};
-
-static NSString *const RollbackFullBundleUpdatePackage = @"patchFailed";

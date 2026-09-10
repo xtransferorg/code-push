@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS `apps` (
   `native_app_key` varchar(64) DEFAULT NULL COMMENT '隶属的原生 App key',
   `repository_url` text COMMENT '仓库地址',
   `port` int DEFAULT NULL COMMENT '端口号',
+  `delivery_type` varchar(20) DEFAULT NULL COMMENT '应用下发类型：INNER内置包/DYNAMIC动态包',
+  `build_type` varchar(20) DEFAULT NULL COMMENT '构建类型：debug/release',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL,
@@ -92,10 +94,12 @@ CREATE TABLE IF NOT EXISTS `packages` (
   `uuid` char(36) NULL DEFAULT NULL,
   `release_id` bigint(20) UNSIGNED NULL DEFAULT NULL,
   `app_binary_time` VARCHAR(255) NULL COMMENT '发布时间',
+  `common_hash` VARCHAR(255) NULL DEFAULT NULL COMMENT '热更新包对应的原生版本commonHash',
   `deleted_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_deploymentid_label` (`deployment_id`,`label`(8)),
-  KEY `idx_versions_id` (`deployment_version_id`)
+  KEY `idx_versions_id` (`deployment_version_id`),
+  KEY `idx_common_hash` (`common_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE IF NOT EXISTS `packages_diff` (
@@ -229,11 +233,14 @@ CREATE TABLE IF NOT EXISTS `log_report_native_app_download` (
 CREATE TABLE IF NOT EXISTS `native_app_versions` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增id',
   `version_id` varchar(64) NOT NULL COMMENT 'uuid，唯一标识，外部关联',
+  `app_meta_id` bigint(20) NULL COMMENT 'meta信息表关联id',
   `app_key` varchar(64) NOT NULL COMMENT '应用的标识，关联到 apps 表',
   `version_number` varchar(50) NOT NULL COMMENT '应用的内部版本号',
   `version_name` varchar(50) NOT NULL COMMENT '应用的版本名称，展示给用户的版本号',
   `changelog` text COMMENT '版本的更新内容说明',
   `download_url` varchar(2048) DEFAULT NULL COMMENT '版本的下载链接（OSS的文件地址，用于生产环境）',
+  `download_url_arm32` varchar(2048) DEFAULT NULL COMMENT '32位 apk 版本的下载链接（OSS的文件地址，用于生产环境）',
+  `download_url_arm64` varchar(2048) DEFAULT NULL COMMENT '64为 apk 版本的下载链接（OSS的文件地址，用于生产环境）',
   `rollout` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '灰度流量，默认0，上限100',
   `white_list` text COMMENT '灰度白名单',
   `build_type` varchar(64) NOT NULL DEFAULT 'debug' COMMENT '包的类型',
@@ -249,6 +256,8 @@ CREATE TABLE IF NOT EXISTS `native_app_versions` (
   `only_apply_version` varchar(50) DEFAULT NULL COMMENT '只允许升级的版本',
   `not_only_apply_version` varchar(50) DEFAULT NULL COMMENT '不允许升级的版本',
   `app_format` VARCHAR(64) NOT NULL COMMENT '应用格式',
+  `review_passed` tinyint(2) DEFAULT 0 COMMENT '审核是否通过：0：未通过，1：通过',
+  `package_size` bigint(20) unsigned DEFAULT 0 COMMENT '包的大小，单位：字节',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_version_id` (`version_id`),
   UNIQUE KEY `uniq_app_version_channel_environment` (`app_key`, `version_name`, `channel`, `environment`),
@@ -272,19 +281,40 @@ CREATE TABLE IF NOT EXISTS `native_apps` (
   `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '是否删除（0：未删除，1：已删除）',
   `app_type` varchar(50) DEFAULT NULL COMMENT '应用的类型',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_app_key` (`app_key`),
-  UNIQUE KEY `uniq_name_platform_app_type` (`name`, `platform`, `app_type`)
+  UNIQUE KEY `uniq_app_key` (`app_key`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb3 COMMENT = '存储应用的基本信息';
 
-CREATE TABLE `resource_files` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `app_version_uuid` VARCHAR(64)  NOT NULL COMMENT 'APP版本uuid',
-  `file_name` VARCHAR(255) NOT NULL COMMENT '压缩包文件名',
-  `file_size` BIGINT UNSIGNED NOT NULL COMMENT '文件大小，字节',
-  `blob_url` VARCHAR(1024) NOT NULL COMMENT 'CDN地址',
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+
+CREATE TABLE IF NOT EXISTS `native_baseline` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '原生某个基线文件的唯一标识',
+  `app_meta_id` bigint(20) unsigned NULL COMMENT '关联原生版本信息表',
+  `deployment_version_id` bigint(20) unsigned NULL COMMENT '关联bundle发布表, 仅file_type类型为BUNDLE_RESOURCE、BASE_PACKAGE时存在',
+  `url` varchar(2048) NOT NULL COMMENT '基线文件的url',
+  `file_name` varchar(255) NOT NULL COMMENT '基线文件的文件名',
+  `file_hash` varchar(255) NOT NULL COMMENT '基线文件hash',
+  `file_type` varchar(20) NOT NULL COMMENT '基线文件type, META|RAW|COMMON|COMMON_MAP|BUNDLE_RESOURCE|BASE_PACKAGE|NATIVE_SIGNATURE',
+  `file_size` bigint(20) unsigned NOT NULL DEFAULT 0 COMMENT '基线文件大小',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `created_at` timestamp NULL DEFAULT NULL COMMENT '创建时间',
+  `deleted_at` timestamp NULL DEFAULT NULL COMMENT '删除时间',
+  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '是否删除（0：未删除，1：已删除）',
+  PRIMARY KEY (`id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb3 COMMENT = '存储App版本的基线信息';
+
+
+CREATE TABLE IF NOT EXISTS `app_version_meta` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '原生某个基线文件的唯一标识',
+  `platform` varchar(20) NULL DEFAULT NULL COMMENT '平台',
+  `version_number` varchar(128) NOT NULL DEFAULT '' COMMENT '版本number',
+  `version_name` varchar(128) NOT NULL DEFAULT '' COMMENT 'App版本',
+  `core_version` varchar(128) NOT NULL DEFAULT '' COMMENT 'core包版本',
+  `cli_version` varchar(128) NOT NULL DEFAULT '' COMMENT 'cli版本',
+  `min_supported_version` varchar(20) NOT NULL DEFAULT '' COMMENT '最小支持版本',
+  `app_type` varchar(20) NOT NULL DEFAULT 'Release' COMMENT '应用类型: Release/Debug',
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `created_at` timestamp NULL DEFAULT NULL COMMENT '创建时间',
+  `deleted_at` timestamp NULL DEFAULT NULL COMMENT '删除时间',
+  `deleted` tinyint NOT NULL DEFAULT '0' COMMENT '是否删除（0：未删除，1：已删除）',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_app_version_uuid` (`app_version_uuid`, `deleted_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  UNIQUE KEY `uniq_app_version_meta` (`platform`, `version_name`, `app_type`)
+) ENGINE=InnoDB DEFAULT CHARSET = utf8mb3 COMMENT = '存储App版本metadata';

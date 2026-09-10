@@ -1,4 +1,9 @@
-﻿import AccountManager = require('@xrnjs/code-push-core')
+﻿import CoreModules = require('@xrnjs/code-push-core')
+import type {
+  AccountManager as AccountManagerType,
+  BaselineManager as BaselineManagerType,
+  NativeAppManager as NativeAppManagerType,
+} from '@xrnjs/code-push-core'
 import chalk from 'chalk'
 import childProcess from 'child_process'
 import debugCommand from './commands/debug'
@@ -28,7 +33,7 @@ import {
   Package,
   PackageInfo,
   UpdateMetrics,
-} from '@xrnjs/code-push-core/script/types'
+} from '@xrnjs/code-push-core'
 import {
   getHermesEnabled,
   getiOSHermesEnabled,
@@ -41,6 +46,7 @@ import { out } from './util/interaction'
 import { isValidRange } from './lib/validation-utils'
 import { getCordovaProjectAppVersion } from './lib/cordova-utils'
 import assert = require('assert')
+import CodePushSdk from './release-hooks/sdk'
 
 var configFilePath: string = path.join(
   process.env.LOCALAPPDATA || process.env.HOME,
@@ -73,7 +79,13 @@ export interface PackageWithMetrics {
   metrics?: any // UpdateMetricsWithTotalActive;
 }
 
-export var sdk: AccountManager
+const { AccountManager, BaselineManager, NativeAppManager } = CoreModules
+
+export var sdk: AccountManagerType
+export var baselineSdk: BaselineManagerType
+export var nativeAppSdk: NativeAppManagerType
+export var codePushSdk: CodePushSdk
+
 export var spawn = childProcess.spawn
 export var execSync = childProcess.execSync
 
@@ -195,7 +207,7 @@ function appAdd(command: cli.IAppAddCommand): Promise<void> {
     os = 'Android'
   } else if (normalizedOs === 'windows') {
     os = 'Windows'
-  } else if (normalizedOs === 'oh') {
+  } else if (normalizedOs === 'harmony') {
     os = 'Harmony'
   } else {
     return Promise.reject<void>(
@@ -215,6 +227,17 @@ function appAdd(command: cli.IAppAddCommand): Promise<void> {
     return Promise.reject<void>(
       new Error(
         `"${command.platform}" is an unsupported platform. Available options are "react-native" and "cordova".`,
+      ),
+    )
+  }
+
+  const normalizedDeliveryType = command.deliveryType.toUpperCase()
+  if (['INNER', 'DYNAMIC'].indexOf(normalizedDeliveryType) > -1) {
+    command.deliveryType = normalizedDeliveryType
+  } else {
+    return Promise.reject<void>(
+      new Error(
+        `"${command.deliveryType}" is an unsupported delivery type. Available options are "INNER", "DYNAMIC" and "NULL".`,
       ),
     )
   }
@@ -608,7 +631,7 @@ function deploymentHistory(
   )
 }
 
-function deserializeConnectionInfo(): ILoginConnectionInfo {
+export function deserializeConnectionInfo(): ILoginConnectionInfo {
   try {
     var savedConnection: string = fs.readFileSync(configFilePath, {
       encoding: 'utf8',
@@ -631,6 +654,33 @@ function deserializeConnectionInfo(): ILoginConnectionInfo {
   } catch (ex) {
     return
   }
+}
+
+export function initSdk() {
+  const connectionInfo = deserializeConnectionInfo()
+
+  sdk = getSdk(
+    connectionInfo.accessKey,
+    CLI_HEADERS,
+    connectionInfo.customServerUrl,
+    connectionInfo.proxy,
+  )
+
+  baselineSdk = getBaselineSdk(
+    connectionInfo.accessKey,
+    CLI_HEADERS,
+    connectionInfo.customServerUrl,
+    connectionInfo.proxy,
+  )
+
+  nativeAppSdk = getNativeAppSdk(
+    connectionInfo.accessKey,
+    CLI_HEADERS,
+    connectionInfo.customServerUrl,
+    connectionInfo.proxy,
+  )
+
+  codePushSdk = getCodePushSdk(sdk)
 }
 
 export function execute(command: cli.ICommand): Promise<void> {
@@ -660,12 +710,7 @@ export function execute(command: cli.ICommand): Promise<void> {
           )
         }
 
-        sdk = getSdk(
-          connectionInfo.accessKey,
-          CLI_HEADERS,
-          connectionInfo.customServerUrl,
-          connectionInfo.proxy,
-        )
+        initSdk()
         break
     }
 
@@ -1250,6 +1295,7 @@ function promote(command: cli.IPromoteCommand): Promise<void> {
     isDisabled: command.disabled,
     isMandatory: command.mandatory,
     rollout: command.rollout,
+    commonHash: command.commonHash,
   }
 
   return sdk
@@ -1799,7 +1845,7 @@ function serializeConnectionInfo(
   )
 }
 
-function releaseErrorHandler(
+export function releaseErrorHandler(
   error: CodePushError,
   command: cli.ICommand,
 ): void {
@@ -1876,7 +1922,7 @@ function getSdk(
   headers: Headers,
   customServerUrl: string,
   proxy: string,
-): AccountManager {
+): AccountManagerType {
   var sdk: any = new AccountManager(
     accessKey,
     CLI_HEADERS,
@@ -1918,6 +1964,40 @@ function getSdk(
   )
 
   return sdk
+}
+
+function getBaselineSdk(
+  accessKey: string,
+  headers: Headers,
+  customServerUrl: string,
+  proxy: string,
+): BaselineManagerType {
+  // BaselineManager实际上是BaselineSdk类，使用default export
+  var baselineSdk: any = new (BaselineManager as any)(
+    customServerUrl,
+    accessKey,
+  )
+
+  return baselineSdk
+}
+
+function getNativeAppSdk(
+  accessKey: string,
+  headers: Headers,
+  customServerUrl: string,
+  proxy: string,
+): NativeAppManagerType {
+  var nativeAppSdk: any = new (NativeAppManager as any)(
+    customServerUrl,
+    accessKey,
+  )
+
+  return nativeAppSdk
+}
+
+function getCodePushSdk(accountSdk: AccountManagerType): CodePushSdk {
+  var codePushSdk: CodePushSdk = new CodePushSdk(accountSdk)
+  return codePushSdk
 }
 
 function tokenCommand(): Promise<void> {

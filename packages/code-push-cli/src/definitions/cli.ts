@@ -1,10 +1,10 @@
-﻿import AccountManager = require('@xrnjs/code-push-core')
 import type {
   AddAppConfig,
   NativeRelease,
   NativeUpdateRelease,
   NativeListRelease,
-} from '@xrnjs/code-push-core/dist/types'
+  AccountManager as AccountManagerType,
+} from '@xrnjs/code-push-core'
 
 export enum CommandType {
   accessKeyAdd,
@@ -74,6 +74,8 @@ export interface IAppAddCommand extends ICommand, AddAppConfig {
   appName: string
   os: string
   platform: string
+  deliveryType: string
+  buildType: string
 }
 
 export interface IAppListCommand extends ICommand {
@@ -175,6 +177,7 @@ export interface IPackageInfo {
   whiteList?: string
   uuid?: string
   channelReleaseId?: string
+  commonHash?: string
 }
 
 export interface IPatchCommand extends ICommand, IPackageInfo {
@@ -272,7 +275,7 @@ export interface IAppConfig extends ICommand, AddAppConfig {
 export type ReleaseHook = (
   currentCommand: IReleaseCommand,
   originalCommand: IReleaseCommand,
-  sdk: AccountManager,
+  sdk: AccountManagerType,
 ) => Promise<IReleaseCommand | void>
 
 export interface ReleaseFile {
@@ -289,7 +292,3 @@ export interface IReleaseUpdateNativeCommand
 export interface IReleaseListNativeCommand
   extends IReleaseNativeCommand,
     NativeListRelease {}
-
-export interface ITokenCommand extends ICommand {
-  // No extra fields needed for token command
-}

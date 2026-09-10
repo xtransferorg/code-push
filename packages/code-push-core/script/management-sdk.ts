@@ -270,6 +270,8 @@ class AccountManager {
       repositoryUrl: config.repositoryUrl,
       appKey: config.appKey,
       port: config.port,
+      deliveryType: config.deliveryType,
+      buildType: config.buildType,
     }
     return this.post(
       urlEncode`/apps/`,
@@ -400,6 +402,99 @@ class AccountManager {
     return this.get(
       urlEncode`/apps/${this.appNameParam(appName)}/deployments/${deploymentName}/history`,
     ).then((res: JsonResponse) => res.body.history)
+  }
+
+  public async releasePackage({
+    packagePath: string,
+    appName: string,
+    deploymentName: string,
+    targetBinaryVersion: string,
+    updateMetadata,
+  }: {
+    packagePath: string
+    appName: string
+    deploymentName: string
+    targetBinaryVersion: string
+    updateMetadata: PackageInfo
+  }) {
+    if (!this.isAuthenticated(true)) {
+      throw new Error('未登陆codepush, 请登陆后使用该命令')
+    }
+    try {
+      const releaseFiles: { sourceLocation: string; targetLocation: string }[] =
+        []
+      if (!fs.lstatSync(packagePath).isDirectory()) {
+        releaseFiles.push({
+          sourceLocation: packagePath,
+          targetLocation: path.basename(packagePath),
+        })
+      } else {
+        const directoryPath = packagePath
+        const baseDirectoryPath = path.join(directoryPath, '..')
+
+        const { files } = await recursiveFs.read(packagePath)
+        files.forEach((filePath: string) => {
+          const relativePath = slash(path.relative(baseDirectoryPath, filePath))
+          releaseFiles.push({
+            sourceLocation: filePath,
+            targetLocation: relativePath,
+          })
+        })
+      }
+
+      const zip = new Promise((resolve, reject) => {
+        const packagePath = path.join(
+          process.cwd(),
+          this.generateRandomFilename(15) + '.zip',
+        )
+        const zipFile = new yazl.ZipFile()
+        const writeStream: fs.WriteStream = fs.createWriteStream(packagePath)
+        zipFile.outputStream
+          .pipe(writeStream)
+          .on('error', (error: Error): void => {
+            reject(error)
+          })
+          .on('close', (): void => {
+            resolve(packagePath)
+          })
+        releaseFiles.forEach((releaseFile) => {
+          zipFile.addFile(
+            releaseFile.sourceLocation,
+            releaseFile.targetLocation,
+          )
+        })
+        zipFile.end()
+      })
+
+      const packagePath = await zip
+
+      // 构造upload
+      let lastTotalProgress = 0
+      const progressBar = new progress(
+        'Upload progress:[:bar] :percent :etas',
+        {
+          complete: '=',
+          incomplete: ' ',
+          width: 50,
+          total: 100,
+        },
+      )
+      const uploadProgress = (currentProgress: number): void => {
+        progressBar.tick(currentProgress - lastTotalProgress)
+        lastTotalProgress = currentProgress
+      }
+
+      return this.release(
+        appName,
+        deploymentName,
+        packagePath,
+        targetBinaryVersion,
+        updateMetadata,
+        uploadProgress,
+      )
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   public release(

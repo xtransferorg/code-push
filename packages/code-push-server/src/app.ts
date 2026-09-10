@@ -18,7 +18,6 @@ import { usersRouter } from './routes/users'
 import expressWinston from 'express-winston'
 import logger from './core/logger'
 import { xrnRouter } from './routes/xrn'
-import { resourceRouter } from './routes/resource'
 
 // 处理非codepush核心业务外部接口
 import { outerRouter } from './routes/outer'
@@ -106,7 +105,6 @@ app.use('/account', accountRouter)
 app.use('/auth', authRouter)
 app.use('/users', usersRouter)
 app.use('/xrn', xrnRouter)
-app.use('/baseline/resource', resourceRouter)
 app.use('/outer', outerRouter)
 
 // 404 handler

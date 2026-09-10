@@ -5,11 +5,7 @@ import updateNotifier from 'update-notifier'
 import parseDuration from 'parse-duration'
 
 import backslash = require('backslash')
-import {
-  BuildType,
-  Environment,
-  UpdateType,
-} from '@xrnjs/code-push-core/dist/types'
+import { BuildType, Environment, UpdateType } from '@xrnjs/code-push-core'
 
 var packageJson = require('../package.json')
 const ROLLOUT_PERCENTAGE_REGEX: RegExp = /^(100|0|[1-9][0-9]|[1-9])%?$/
@@ -511,8 +507,11 @@ var argv = yargs
         (yargs: yargs.Argv): void => {
           isValidCommand = true
           yargs
-            .usage(USAGE_PREFIX + ' app add <appName> <os> <platform>')
-            .demand(/*count*/ 3, /*max*/ 3) // Require exactly three non-option arguments
+            .usage(
+              USAGE_PREFIX +
+                ' app add <appName> <os> <platform> <deliveryType>',
+            )
+            .demand(/*count*/ 4, /*max*/ 4) // Require exactly four non-option arguments
             .option('port', {
               alias: 'p',
               type: 'number',
@@ -525,17 +524,22 @@ var argv = yargs
               alias: 'u',
               type: 'string',
             })
+            .option('buildType', {
+              alias: 'bt',
+              type: 'string',
+              options: ['debug', 'release'],
+            })
             .example(
-              'app add MyApp ios react-native',
-              'Adds app "MyApp", indicating that it\'s an iOS React Native app',
+              'app add MyApp ios react-native store',
+              'Adds app "MyApp" as an iOS React Native app with deliveryType "store"',
             )
             .example(
-              'app add MyApp windows react-native',
-              'Adds app "MyApp", indicating that it\'s a Windows React Native app',
+              'app add MyApp windows react-native enterprise',
+              'Adds app "MyApp" as a Windows React Native app with deliveryType "enterprise"',
             )
             .example(
-              'app add MyApp android cordova',
-              'Adds app "MyApp", indicating that it\'s an Android Cordova app',
+              'app add MyApp android cordova internal',
+              'Adds app "MyApp" as an Android Cordova app with deliveryType "internal"',
             )
 
           addCommonConfiguration(yargs)
@@ -1628,7 +1632,8 @@ var argv = yargs
               type: 'boolean',
             })
             .option('updateType', {
-              description: 'Update type of the release. "Force" or "Silent" or "Suggestion"',
+              description:
+                'Update type of the release. "Force" or "Silent" or "Suggestion"',
               type: 'string',
             })
             .option('status', {
@@ -1676,7 +1681,7 @@ var argv = yargs
             })
             .option('status', {
               description:
-                'Status of the release. "rollout" or "published" or "discarded"',
+                'Status of the release. "market_approved" | "rollout" | "paused" | "published" | "rollout_closed" | "discarded"',
               type: 'string',
             })
             .option('whiteList', {
@@ -1791,6 +1796,7 @@ function createCommand(): cli.ICommand {
     var arg2: any = argv._[2]
     var arg3: any = argv._[3]
     var arg4: any = argv._[4]
+    var arg5: any = argv._[5]
 
     switch (arg0) {
       case 'access-key':
@@ -1859,6 +1865,8 @@ function createCommand(): cli.ICommand {
               appAddCommand.appKey = argv['appKey'] as string
               appAddCommand.repositoryUrl = argv['repositoryUrl'] as string
               appAddCommand.port = argv['port'] as number
+              appAddCommand.deliveryType = arg5
+              appAddCommand.buildType = argv['buildType'] as string
             }
             break
 
@@ -1870,6 +1878,8 @@ function createCommand(): cli.ICommand {
               appModifyCommand.appKey = argv['appKey'] as string
               appModifyCommand.repositoryUrl = argv['repositoryUrl'] as string
               appModifyCommand.port = argv['port'] as number
+              appModifyCommand.deliveryType = argv['deliveryType'] as string
+              appModifyCommand.buildType = argv['buildType'] as string
             }
             break
 
@@ -2115,6 +2125,7 @@ function createCommand(): cli.ICommand {
           deploymentPromoteCommand.appStoreVersion = argv[
             'targetBinaryVersion'
           ] as string
+          deploymentPromoteCommand.commonHash = argv['commonHash'] as string
         }
         break
 

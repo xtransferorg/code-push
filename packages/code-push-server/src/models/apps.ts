@@ -9,6 +9,8 @@ export interface AppsInterface extends Model {
   platform: number
   repository_url?: string
   native_app_key?: string
+  build_type?: string
+  delivery_type?: string
   port?: number
   /**
    * @deprecated is_use_diff_text is no longer supported
@@ -31,6 +33,8 @@ export const Apps = sequelize.define<AppsInterface>(
     uid: DataTypes.BIGINT({ length: 20 }),
     os: DataTypes.INTEGER({ length: 3 }),
     platform: DataTypes.INTEGER({ length: 3 }),
+    delivery_type: DataTypes.STRING,
+    build_type: DataTypes.STRING,
     is_use_diff_text: DataTypes.INTEGER({ length: 3 }),
     repository_url: DataTypes.STRING,
     native_app_key: DataTypes.STRING,

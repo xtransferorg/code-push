@@ -17,9 +17,25 @@ import {
   RNOHError,
   UITurboModuleContext,
 } from '@rnoh/react-native-openharmony/ts'
-import { RN_INSTANCE_MANAGER } from 'xrn-multi-bundle/ts'
+import { BundleInfo, RN_INSTANCE_MANAGER } from 'xrn-multi-bundle/ts'
+import { log } from './nativeCodePush/Logging'
+import { JSON } from '@kit.ArkTS'
 
 const TAG = 'CodePushNativeModule-CodePushInstance: '
+
+export interface ErrorCallback {
+  callback: (eventID: string, params?: Record<string, string | number>) => void
+}
+
+let gErrorCallback: ErrorCallback = undefined
+
+export function getGlobalErrorCallback(): ErrorCallback | undefined {
+  return gErrorCallback
+}
+
+export function setGlobalErrorCallback(errorCallback: ErrorCallback | undefined) {
+  gErrorCallback = errorCallback
+}
 
 export class CodePush {
   private sIsRunningBinaryVersion: boolean = false
@@ -30,7 +46,7 @@ export class CodePush {
   private mAssetsBundleFileName: string = ''
 
   // Helper classes.
-  private mUpdateManager: CodePushUpdateManager
+  readonly mUpdateManager: CodePushUpdateManager
   private mSettingsManager: SettingsManager
 
   // Config properties.
@@ -38,25 +54,34 @@ export class CodePush {
   private mCurrentInstance: CodePush | null = null
   private context: common.UIAbilityContext
 
+  private isNativeSyncing = false
+
   constructor(
     public bundleInfo: any,
     public deploymentKey: string,
     public isDebugMode: boolean,
     private mServerUrl: string,
-    private rnContext: UITurboModuleContext,
+    private commonHash: string,
+    private rnContext: UITurboModuleContext | common.UIAbilityContext,
     publicKeyResourceDescriptor?: number,
   ) {
     Logger.info(
       TAG,
       `constructor start param, deploymentKey: ${deploymentKey}, isDebugMode: ${isDebugMode?.toString()}`,
     )
-    this.context = this.rnContext.uiAbilityContext
+    if ("subscribeToRNInstanceErrors" in rnContext) {
+      this.context = (this.rnContext as UITurboModuleContext)?.uiAbilityContext
+    } else {
+      this.context = this.rnContext as common.UIAbilityContext
+    }
+
     this.mUpdateManager = new CodePushUpdateManager(
       this.context,
       '',
+      bundleInfo?.bundleName,
       deploymentKey,
     )
-    this.mSettingsManager = new SettingsManager(this.context, deploymentKey)
+    this.mSettingsManager = new SettingsManager(this.context, bundleInfo?.bundleName, deploymentKey)
     if (this.sAppVersion == null) {
       try {
         let bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT
@@ -69,6 +94,7 @@ export class CodePush {
 
     this.mCurrentInstance = this
     this.mServerUrl = mServerUrl
+    this.commonHash = commonHash
 
     // this.rnContext.rnInstance.subscribeToLifecycleEvents('JS_BUNDLE_EXECUTION_FINISH', () => {
     //   // this.rnContext.rnInstance.cppEventEmitter.subscribe('')
@@ -76,10 +102,40 @@ export class CodePush {
     //     this.initializeUpdateAfterRestart()
     //   }, 1000)
     // })
-    this.rnContext.subscribeToRNOHErrors((error) =>
-      this.subscribeRNOHError(error),
-    )
-    this.initializeUpdateAfterRestart()
+    if ("subscribeToRNInstanceErrors" in rnContext) {
+      (this.rnContext as UITurboModuleContext)?.subscribeToRNOHErrors((error) =>
+        this.subscribeRNOHError(error),
+      )
+    }
+    if (this.bundleInfo) {
+      console.log(`[Preload]-CodePush.constructor=====`)
+      // this.initializeUpdateAfterRestart()
+    }
+  }
+
+  setBundleInfo(bundleInfo: BundleInfo) {
+    console.log(`[Preload]-CodePush.setBundleInfo:bundleInfo=${JSON.stringify(bundleInfo)}}, this.bundleInfo=${JSON.stringify(this.bundleInfo)}`)
+    if (!this.bundleInfo && bundleInfo) {
+      this.bundleInfo = bundleInfo
+      this.deploymentKey = bundleInfo.getCodePushKey()
+      const bundleName = bundleInfo.bundleName
+      this.mUpdateManager.setBundleInfo(bundleName, this.deploymentKey)
+      this.mSettingsManager.setBundleInfo(bundleName, this.deploymentKey)
+      console.log(`[Preload]-CodePush.setBundleInfo=====`)
+      // this.initializeUpdateAfterRestart()
+    }
+  }
+
+  setCommonHash(commonHash: string) {
+    this.commonHash = commonHash
+  }
+
+  getNativeSyncing(): boolean {
+    return this.isNativeSyncing
+  }
+
+  setNativeSyncing(syncing: boolean) {
+    this.isNativeSyncing = syncing
   }
 
   private subscribeRNOHError(error: RNOHError) {
@@ -95,8 +151,13 @@ export class CodePush {
     return CodePush.sTestConfigurationFlag
   }
 
-  public setRnContext(rnContext: UITurboModuleContext) {
-    this.rnContext = rnContext
+  public setRnContext(rnContext: UITurboModuleContext | common.UIAbilityContext) {
+    if ("subscribeToRNInstanceErrors" in rnContext) {
+      this.rnContext = rnContext
+      this.context = rnContext.uiAbilityContext
+    } else {
+      this.context = rnContext
+    }
   }
 
   public didUpdate(): boolean {
@@ -194,13 +255,17 @@ export class CodePush {
   }
 
   initializeUpdateAfterRestart() {
+    log(`[Preload]-${TAG}.initializeUpdateAfterRestart===:bundleName=${this.bundleInfo?.bundleName}`)
+    if (!this.bundleInfo) {
+      return
+    }
     // 重置状态，指示应用是否刚刚更新过。
     this.mDidUpdate = false
 
     const pendingUpdate = this.mSettingsManager.getPendingUpdate()
     Logger.info(
       TAG,
-      `initializeUpdateAfterRestart pendingUpdate ${pendingUpdate}`,
+      `[Preload]-initializeUpdateAfterRestart pendingUpdate ${pendingUpdate}, bundleName=${this.bundleInfo?.bundleName}`,
     )
     if (pendingUpdate != null) {
       const packageMetadata = this.mUpdateManager.getCurrentPackage()
@@ -210,7 +275,8 @@ export class CodePush {
           this.hasBinaryVersionChanged(packageMetadata))
       ) {
         Logger.info(
-          'Skipping initializeUpdateAfterRestart(), binary version is newer',
+          TAG,
+          `[Preload]-Skipping initializeUpdateAfterRestart(), binary version is newer,`,
         )
         return
       }
@@ -218,6 +284,7 @@ export class CodePush {
       try {
         let updateIsLoading =
           pendingUpdate[CodePushConstants.PENDING_UPDATE_IS_LOADING_KEY]
+        log(`[Preload]-${TAG}.initializeUpdateAfterRestart===: updateIsLoading=${updateIsLoading}, bundleName=${this.bundleInfo?.bundleName}`)
         if (updateIsLoading) {
           // Pending update was initialized, but notifyApplicationReady was not called.
           // Therefore, deduce that it is a broken update and rollback.
@@ -242,6 +309,15 @@ export class CodePush {
           `initializeUpdateAfterRestart error ${JSON.stringify(e)}`,
         )
       }
+    }
+  }
+
+  beforeLoadBizBundleHandlePendingUpdate() {
+    const currentPackageHash = this.mUpdateManager.getCurrentPackageHash()
+    const pendingUpdate = this.mSettingsManager.getPendingUpdate()
+    const isPendingHash = this.mSettingsManager.isPendingHash(currentPackageHash)
+    if (pendingUpdate && isPendingHash) {
+      this.initializeUpdateAfterRestart()
     }
   }
 
@@ -323,6 +399,10 @@ export class CodePush {
     return this.mServerUrl
   }
 
+  getCommonHash(): string {
+    return this.commonHash
+  }
+
   isRunningBinaryVersion(): boolean {
     return this.sIsRunningBinaryVersion
   }
@@ -332,19 +412,20 @@ export class CodePush {
   }
 
   public rollbackPackage(): void {
+    log(`rollbackPackage======`)
     let info: object = this.mUpdateManager.getCurrentPackageInfo()
     Logger.info(
       TAG,
       `rollbackPackage getCurrentPackageInfo: ${JSON.stringify(info)}`,
     )
     // 存储有问题的热更新
-    this.mSettingsManager.saveFailedUpdate({
-      [CodePushConstants.PACKAGE_HASH_KEY]:
-        info[CodePushConstants.CURRENT_PACKAGE_KEY],
-    })
+    let failedPackage: object = this.mUpdateManager.getCurrentPackage()
+    this.mSettingsManager.saveFailedUpdate(failedPackage)
     this.mUpdateManager.rollbackPackage()
     this.mSettingsManager.removePendingUpdate()
-    // 主动触发 reload
-    RN_INSTANCE_MANAGER.reCreateRNInstance(this.bundleInfo.bundleName)
+    // 主动触发 reload，这里不能重复创建 instance，不然存在回滚bug
+    // RN_INSTANCE_MANAGER.reCreateRNInstance(
+    //   this.bundleInfo.bundleName,
+    // )
   }
 }

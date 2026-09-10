@@ -1,8 +1,8 @@
 {
   "name": "@xrnjs/code-push-cli",
-  "version": "0.0.1",
+  "version": "1.0.13",
   "description": "Management CLI for the CodePush service",
-  "main": "bin/cli.js",
+  "main": "bin/index.js",
   "scripts": {
     "start": "npm run build && npm unlink -g @xrnjs/code-push-cli && npm link",
     "build": "rm -rf bin && tsc",
@@ -12,13 +12,9 @@
   "bin": {
     "code-push": "bin/cli.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/xtransferorg/code-push.git"
-  },
-  "homepage": "https://github.com/xtransferorg/code-push",
   "files": [
-    "bin/"
+    "bin/",
+    "src/"
   ],
   "keywords": [
     "code",
@@ -28,7 +24,7 @@
     "react"
   ],
   "author": "XTransfer",
-  "license": "Apache 2.0",
+  "license": "MIT",
   "dependencies": {
     "backslash": "0.2.0",
     "chalk": "4.1.2",

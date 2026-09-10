@@ -12,6 +12,10 @@ import FileUtils from './FileUtils'
 import { CodePushMalformedDataException } from './CodePushMalformedDataException'
 import fs from '@ohos.file.fs'
 import Logger from './Logger'
+import { common } from '@kit.AbilityKit'
+import { util } from '@kit.ArkTS'
+import { CodePush } from './CodePush'
+import { Configuration } from './nativeCodePush/NativeCodePushConfig'
 
 const TAG = 'CodePushNativeModule-CodePushUtils: '
 
@@ -22,6 +26,17 @@ interface WritableMap {
 type File = fs.File
 
 export class CodePushUtils {
+
+  static getConfiguration(codePush: CodePush, clientUniqueId: string): Configuration {
+    return {
+      appVersion: codePush.getAppVersion(),
+      clientUniqueId: clientUniqueId,
+      deploymentKey: codePush.getDeploymentKey(),
+      serverUrl: codePush?.getServerUrl(),
+      commonHash: codePush?.getCommonHash()
+    }
+  }
+
   static writeJsonToFile(json: object, filePath: string, entry: string) {
     Logger.info(TAG, 'writeJsonToFile ' + entry + filePath)
     let jsonString = JSON.stringify(json)
@@ -99,6 +114,83 @@ export class CodePushUtils {
       .catch((err: BusinessError) => {
         Logger.info(TAG, 'read file data failed with error:' + err)
       })
+  }
+
+  static rawfileExists(context: common.Context, name: string): boolean {
+    try {
+      const fd = context.resourceManager.getRawFdSync(name)
+      if (fd) {
+        try { context.resourceManager.closeRawFdSync(name) } catch (_) {}
+        return true
+      }
+      return false
+    } catch (_) {
+      return false
+    }
+  }
+
+  static readRawfileJson<T = Record<string, any>>(
+    context: common.Context,
+    name: string,
+  ): T | null {
+    if (!CodePushUtils.rawfileExists(context, name)) {
+      return null
+    }
+
+    try {
+      const bytes: Uint8Array = context.resourceManager.getRawFileContentSync(name)
+      const text = util.TextDecoder.create('utf-8', { ignoreBOM: true }).decodeToString(bytes)
+      return JSON.parse(text) as T
+    } catch (e) {
+      Logger.error(TAG, `readRawfileJson error, name=${name}, err=${JSON.stringify(e)}`)
+      return null
+    }
+  }
+
+  /*
+   * 将App 内置文件拷贝到沙盒目录下
+   * */
+  static async copyRawfileToSandbox(
+    context: common.Context,
+    rawfileName: string,
+    destPath: string,
+  ): Promise<void> {
+
+    // 1. 确保目标目录存在
+    const dirEnd = destPath.lastIndexOf('/')
+    if (dirEnd > 0) {
+      const dir = destPath.substring(0, dirEnd)
+      if (!fs.accessSync(dir)) {
+        fs.mkdirSync(dir, true)   // 第二个参数 true = 递归创建
+      }
+    }
+
+    // 2. 读出 rawfile 全部字节
+    const bytes: Uint8Array = await context.resourceManager.getRawFileContent(rawfileName)
+    // 3. 写到沙箱
+    let file: fs.File | null = null
+
+    try {
+      file = fs.openSync(
+        destPath,
+        fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC,
+      )
+      const writeLen = fs.writeSync(file.fd, bytes.buffer)
+      if (writeLen !== bytes.byteLength) {
+        throw new Error(`partial write: expected=${bytes.byteLength}, actual=${writeLen}`)
+      }
+    } finally {
+      if (file) {
+        Logger.info(TAG, 'read file data succeed')
+        try { fs.closeSync(file) } catch (_) {}
+      }
+    }
+
+  }
+
+  static convertString2NumberSafe(str: string, defaultValue: number): number {
+    const n = Number(str)
+    return Number.isFinite(n) ? n : defaultValue
   }
 
   appendPathComponent() {}

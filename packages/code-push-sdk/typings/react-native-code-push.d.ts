@@ -269,6 +269,8 @@ export interface Configuration {
    *
    */
   serverUrl: string
+
+  commonHash?: string
 }
 
 /**
@@ -284,6 +286,12 @@ declare namespace CodePush {
 
   // 目前仅在 HarmonyOS 中使用
   function getIntlResourcePath(path: string): boolean
+
+  // 内置包是否存在
+  function isAssetBundleFileExists(): boolean
+
+  // 获取基础包路径
+  function getBasePackageBundlePath(): string
   
   /**
    * Represents the default settings that will be used by the sync method if

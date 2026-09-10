@@ -1,10 +1,6 @@
+import NativeCodePush from './src/NativeCodePush'
+
 const log = require('./logging')
-let NativeCodePush
-if (Platform.OS === 'harmony') {
-  NativeCodePush = require('./src/NativeCodePush').default
-} else {
-  NativeCodePush = require('react-native').NativeModules.CodePush
-}
 
 const RestartManager = (() => {
   let _allowed = true

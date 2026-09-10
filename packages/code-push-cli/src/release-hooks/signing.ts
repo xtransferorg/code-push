@@ -6,7 +6,8 @@ import path from 'path'
 import rimraf from 'rimraf'
 import { generatePackageHashFromDirectory } from '../lib/hash-utils'
 
-import AccountManager = require('@xrnjs/code-push-core')
+import CoreModules = require('@xrnjs/code-push-core')
+const { AccountManager } = CoreModules
 
 var CURRENT_CLAIM_VERSION: string = '1.0.0'
 var METADATA_FILE_NAME: string = '.codepushrelease'
@@ -47,7 +48,7 @@ const deletePreviousSignatureIfExists = (
 var sign: cli.ReleaseHook = (
   currentCommand: cli.IReleaseCommand,
   originalCommand: cli.IReleaseCommand,
-  sdk: AccountManager,
+  sdk: InstanceType<typeof AccountManager>,
 ): Promise<cli.IReleaseCommand> => {
   if (!currentCommand.privateKeyPath) {
     if (fs.lstatSync(currentCommand.package).isDirectory()) {

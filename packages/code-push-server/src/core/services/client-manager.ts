@@ -1,6 +1,7 @@
 import { Logger } from '../logger'
 import _, { isEmpty } from 'lodash'
 import { Op } from 'sequelize'
+import { Apps } from '../../models/apps'
 import { Deployments } from '../../models/deployments'
 import { DeploymentsVersions } from '../../models/deployments_versions'
 import { LogReportDeploy } from '../../models/log_report_deploy'
@@ -11,8 +12,10 @@ import { PackagesMetrics } from '../../models/packages_metrics'
 import { AppError } from '../app-error'
 import { config } from '../config'
 import {
+  DELIVERY_TYPE_DYNAMIC,
   DEPLOYMENT_FAILED,
   DEPLOYMENT_SUCCEEDED,
+  IOS,
   IS_DISABLED_NO,
   PATCH_FAILED,
   PATCH_SUCCEEDED,
@@ -22,16 +25,24 @@ import {
 import { parseVersion, getBlobDownloadUrl } from '../utils/common'
 import { redisClient } from '../utils/connections'
 import { Releases } from '../../models/releases'
+import { appManager } from './app-manager'
 
 const UPDATE_CHECK = 'UPDATE_CHECK'
 const CHOSEN_MAN = 'CHOSEN_MAN'
 const EXPIRED = 600
+
+interface DiffInfo {
+  downloadDiffUrl: string
+  downloadDiffSize: number
+  isDiffAvailable: boolean
+}
 
 interface UpdateCheckInfo {
   packageId: number
   downloadDiffUrl: string
   downloadDiffSize: number
   isDiffAvailable: boolean
+  currentPackageDiff: DiffInfo
   downloadURL: string
   downloadUrl: string
   description: string
@@ -50,6 +61,9 @@ interface UpdateCheckInfo {
   whiteList: string
   channelReleaseId: number
   releaseId: number
+  basePackageHash: string
+  baseDownloadUrl: string
+  basePackageSize: number
 }
 
 class ClientManager {
@@ -97,9 +111,10 @@ class ClientManager {
     appVersion: string,
     label: string,
     packageHash: string,
-    logger: Logger,
     previousRelease = false,
     builtInPackageHash = '',
+    commonHash: string = '',
+    logger: Logger,
   ) {
     if (!config.common.updateCheckCache) {
       return this.updateCheck(
@@ -107,9 +122,10 @@ class ClientManager {
         appVersion,
         label,
         packageHash,
-        logger,
         previousRelease,
         builtInPackageHash,
+        commonHash,
+        logger,
       )
     }
     const redisCacheKey = this.getUpdateCheckCacheKey(
@@ -133,9 +149,10 @@ class ClientManager {
         appVersion,
         label,
         packageHash,
-        logger,
         previousRelease,
         builtInPackageHash,
+        commonHash,
+        logger,
       ).then((rs) => {
         try {
           logger.debug('updateCheckFromCache read from db')
@@ -232,14 +249,15 @@ class ClientManager {
   }
 
   // eslint-disable-next-line max-lines-per-function
-  private updateCheck(
+  private async updateCheck(
     deploymentKey: string,
     appVersion: string,
     label: string,
     packageHash: string,
-    logger: Logger,
     previousRelease = false,
     builtInPackageHash: string = '',
+    commonHash: string = '',
+    logger: Logger,
   ) {
     if (!packageHash) {
       // 当接口中没有传递 packageHash 时，使用内置包的 hash 参与计算
@@ -250,6 +268,11 @@ class ClientManager {
       downloadDiffUrl: '',
       downloadDiffSize: 0,
       isDiffAvailable: false,
+      currentPackageDiff: {
+        downloadDiffUrl: '',
+        downloadDiffSize: 0,
+        isDiffAvailable: false,
+      },
       downloadURL: '',
       downloadUrl: '',
       description: '',
@@ -268,12 +291,37 @@ class ClientManager {
       whiteList: '',
       channelReleaseId: 0,
       releaseId: 0,
+      basePackageHash: '',
+      baseDownloadUrl: '',
+      basePackageSize: 0,
     }
+
     if (_.isEmpty(deploymentKey) || _.isEmpty(appVersion)) {
       return Promise.reject(
         new AppError('please input deploymentKey and appVersion'),
       )
     }
+
+    const bundleBasePackage = await appManager.queryFirstCodepush(
+      deploymentKey,
+      appVersion,
+    )
+
+    if (
+      bundleBasePackage &&
+      bundleBasePackage.deliveryType === DELIVERY_TYPE_DYNAMIC
+    ) {
+      Object.assign(rs, {
+        basePackageHash: bundleBasePackage.package_hash,
+        baseDownloadUrl: getBlobDownloadUrl(bundleBasePackage.blob_url),
+        basePackageSize: bundleBasePackage.size,
+      })
+
+      if (!builtInPackageHash) {
+        builtInPackageHash = bundleBasePackage.package_hash
+      }
+    }
+
     return Deployments.findOne({ where: { deployment_key: deploymentKey } })
       .then((dep) => {
         if (_.isEmpty(dep)) {
@@ -313,14 +361,15 @@ class ClientManager {
           return undefined
         }
         const deploymentsVersionId = _.get(deploymentsVersions, 'id')
-        const packagesAll = await Packages.findAll({
-          where: {
-            deployment_version_id: deploymentsVersionId,
-            is_disabled: IS_DISABLED_NO,
-            release_method: {
-              [Op.in]: [RELEASE_METHOD_UPLOAD, RELEASE_METHOD_PROMOTE],
-            },
+        const whereCondition = {
+          deployment_version_id: deploymentsVersionId,
+          is_disabled: IS_DISABLED_NO,
+          release_method: {
+            [Op.in]: [RELEASE_METHOD_UPLOAD, RELEASE_METHOD_PROMOTE],
           },
+        }
+        const packagesAll = await Packages.findAll({
+          where: whereCondition,
           order: [['id', 'desc']],
         })
         const labelId = Number(label.slice(1) || '')
@@ -339,14 +388,16 @@ class ClientManager {
           // 只有在当前用户没有命中灰度时，才会使用上一个稳定版本的包进行下发
           // 解决多 bundle 情况下，有相互依赖时某一个 bundle 正在进行灰度导致异常
           // 查找最新的两个包，按照ID进行排序，第二个就是最新稳定的包
-          const [, packageInfo] = await Packages.findAll({
-            where: {
-              deployment_version_id: deploymentsVersionId,
-              is_disabled: IS_DISABLED_NO,
-              release_method: {
-                [Op.in]: [RELEASE_METHOD_UPLOAD, RELEASE_METHOD_PROMOTE],
-              },
+          const whereConditionForPrevious = {
+            deployment_version_id: deploymentsVersionId,
+            is_disabled: IS_DISABLED_NO,
+            release_method: {
+              [Op.in]: [RELEASE_METHOD_UPLOAD, RELEASE_METHOD_PROMOTE],
             },
+          }
+
+          const [, packageInfo] = await Packages.findAll({
+            where: whereConditionForPrevious,
             limit: 2,
             order: [['id', 'desc']],
           })
@@ -357,10 +408,22 @@ class ClientManager {
         }
         return Packages.findByPk(packageId)
           .then((packages) => {
+            // commonHashMatched 为 true 的条件（或关系）：
+            // 1. commonHash 为空
+            // 2. packages.common_hash 为空
+            // 3. 两者都不为空且相等
+            const commonHashMatched =
+              !commonHash ||
+              !packages.common_hash ||
+              (commonHash &&
+                packages.common_hash &&
+                _.eq(commonHash, packages.common_hash))
+
             if (
               packages &&
               _.eq(packages.deployment_id, deploymentsVersions.deployment_id) &&
-              !_.eq(packages.package_hash, packageHash)
+              !_.eq(packages.package_hash, packageHash) &&
+              commonHashMatched
             ) {
               rs.packageId = packageId
               rs.targetBinaryRange = deploymentsVersions.app_version
@@ -390,28 +453,74 @@ class ClientManager {
             }
             return packages
           })
-          .then((packages) => {
+          .then(async (packages) => {
             // 尝试增量更新
-            if (
-              builtInPackageHash &&
+            let forceFullPackageOnly = false
+            if (appVersion === '3.8.4') {
+              const deployment = await Deployments.findOne({
+                where: { deployment_key: deploymentKey },
+              })
+              if (deployment) {
+                const app = await Apps.findByPk(deployment.appid)
+                forceFullPackageOnly = !!app && app.os === IOS
+              }
+            }
+            if (forceFullPackageOnly) {
+              logger.info('命中特殊规则：iOS 3.8.4 仅返回全量包')
+              return undefined
+            }
+            const diffTasks: Array<Promise<void>> = []
+            const shouldCheckDiff =
               !_.isEmpty(packages) &&
               !_.eq(_.get(packages, 'package_hash', ''), packageHash)
-            ) {
-              return PackagesDiff.findOne({
-                where: {
-                  package_id: packages.id,
-                  diff_against_package_hash: builtInPackageHash, // 内置包的 hash
-                },
-              }).then((diffPackage) => {
-                if (!_.isEmpty(diffPackage)) {
-                  rs.downloadDiffUrl = getBlobDownloadUrl(
-                    _.get(diffPackage, 'diff_blob_url'),
-                  )
-                  rs.downloadDiffSize = _.get(diffPackage, 'diff_size', 0)
-                  rs.isDiffAvailable = true
-                }
-              })
+            if (builtInPackageHash && shouldCheckDiff) {
+              diffTasks.push(
+                PackagesDiff.findOne({
+                  where: {
+                    package_id: packages.id,
+                    diff_against_package_hash: builtInPackageHash, // 内置包的 hash
+                  },
+                }).then((diffPackage) => {
+                  if (!_.isEmpty(diffPackage)) {
+                    rs.downloadDiffUrl = getBlobDownloadUrl(
+                      _.get(diffPackage, 'diff_blob_url'),
+                    )
+                    rs.downloadDiffSize = _.get(diffPackage, 'diff_size', 0)
+                    rs.isDiffAvailable = true
+                  }
+                }),
+              )
             }
+            if (
+              packageHash &&
+              shouldCheckDiff &&
+              builtInPackageHash !== packageHash
+            ) {
+              diffTasks.push(
+                PackagesDiff.findOne({
+                  where: {
+                    package_id: packages.id,
+                    diff_against_package_hash: packageHash, // 当前包的 hash
+                  },
+                }).then((diffPackage) => {
+                  if (!_.isEmpty(diffPackage)) {
+                    rs.currentPackageDiff = {
+                      downloadDiffUrl: getBlobDownloadUrl(
+                        _.get(diffPackage, 'diff_blob_url'),
+                      ),
+                      downloadDiffSize: _.get(diffPackage, 'diff_size', 0),
+                      isDiffAvailable: true,
+                    }
+                  }
+                }),
+              )
+            }
+            if (!diffTasks.length) {
+              return undefined
+            }
+            return Promise.all(diffTasks).then(() => {
+              return undefined
+            })
           })
       })
       .then(() => {
@@ -547,7 +656,7 @@ class ClientManager {
     }
     const release = await Releases.findByPk(packageInfo.release_id)
     const rollout = _.get(release, 'rollout', 0)
-    return rollout < 100
+    return rollout < 100 && packageInfo.is_disabled === IS_DISABLED_NO
   }
 
   async updateCheckAdapter(
@@ -557,6 +666,9 @@ class ClientManager {
       label: string
       packageHash: string
       clientUniqueId: string
+      previousRelease: boolean
+      builtInPackageHash: string
+      commonHash: string
     }>,
     logger: Logger,
   ) {
@@ -566,12 +678,18 @@ class ClientManager {
       label = '',
       packageHash,
       clientUniqueId,
+      previousRelease,
+      builtInPackageHash,
+      commonHash,
     } = updateCheckInfo
     let rs = await clientManager.updateCheckFromCache(
       deploymentKey,
       appVersion,
       label,
       packageHash,
+      previousRelease,
+      builtInPackageHash,
+      commonHash,
       logger,
     )
     const isChosenCurrentPackage = await clientManager.chosenMan(
@@ -588,8 +706,10 @@ class ClientManager {
         appVersion,
         label,
         packageHash,
-        logger,
         true, // 使用前一个稳定版本的包进行下发
+        builtInPackageHash,
+        commonHash,
+        logger,
       )
       if (rs.rollout !== 100) {
         // 上一个包灰度流量不正确，应该告警。
@@ -598,6 +718,34 @@ class ClientManager {
     }
     logger.info('updateCheck success')
     return rs
+  }
+
+  async updateCheckForClient(params: {
+    deploymentKey: string
+    appVersion: string
+    label: string
+    packageHash: string
+    clientUniqueId: string
+    builtInPackageHash: string
+    commonHash?: string
+    logger: Logger
+  }) {
+    const { logger, ...rest } = params
+    const rs = await this.updateCheckAdapter(
+      {
+        deploymentKey: rest.deploymentKey,
+        appVersion: rest.appVersion,
+        label: rest.label,
+        packageHash: rest.packageHash,
+        clientUniqueId: rest.clientUniqueId,
+        builtInPackageHash: rest.builtInPackageHash,
+        commonHash: rest.commonHash,
+      },
+      logger,
+    )
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { packageId, rollout, whiteList, releaseId, channelReleaseId, ...publicInfo } = rs
+    return publicInfo
   }
 }
 

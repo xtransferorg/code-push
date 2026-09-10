@@ -19,9 +19,11 @@ export class CodePushConstants {
   public static readonly DOWNLOAD_FILE_NAME: string = 'download.zip'
   public static readonly DOWNLOAD_PROGRESS_EVENT_NAME: string =
     'CodePushDownloadProgress'
+  public static readonly BASE_DOWNLOAD_URL_KEY: string ='baseDownloadUrl'
   public static readonly DOWNLOAD_URL_KEY: string = 'downloadUrl'
   public static readonly FAILED_UPDATES_KEY: string = 'CODE_PUSH_FAILED_UPDATES'
   public static readonly PACKAGE_FILE_NAME: string = 'app.json'
+  public static readonly PACKAGE_BASE_HASH_KEY = 'basePackageHash'
   public static readonly PACKAGE_HASH_KEY: string = 'packageHash'
   public static readonly PENDING_UPDATE_HASH_KEY: string = 'hash'
   public static readonly PENDING_UPDATE_IS_LOADING_KEY: string = 'isLoading'
@@ -30,6 +32,7 @@ export class CodePushConstants {
   public static readonly REACT_NATIVE_LOG_TAG: string = 'ReactNative'
   public static readonly RELATIVE_BUNDLE_PATH_KEY: string = 'bundlePath'
   public static readonly STATUS_FILE: string = 'codepush.json'
+  public static readonly BASE_PACKAGE_HASH_FILE: string = 'codepush.json'
   public static readonly UNZIPPED_FOLDER_NAME: string = 'unzipped'
   public static readonly CODE_PUSH_APK_BUILD_TIME_KEY: string =
     'CODE_PUSH_APK_BUILD_TIME'
@@ -42,4 +45,7 @@ export class CodePushConstants {
   public static readonly LATEST_ROLLBACK_COUNT_KEY: string = 'count'
   public static readonly CLIENT_UNIQUE_ID_KEY: string = 'clientUniqueId'
   public static readonly CODE_PUSH_DOCUMENT_DIRECTORY: string = 'CodePushSandBox'
+  public static readonly RollbackFullBundleUpdatePackage: string = 'patchFailed'
+  public static readonly HPATCHZ_SUCCESS: number = 0
+  public static readonly RELATIVE_BUNDLE_FOLDER_NAME: string = 'release_harmony'
 }

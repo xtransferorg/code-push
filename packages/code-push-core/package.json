@@ -1,6 +1,6 @@
 {
   "name": "@xrnjs/code-push-core",
-  "version": "0.0.1",
+  "version": "1.0.12",
   "description": "Management SDK for the CodePush service",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,11 +9,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/xtransferorg/code-push.git"
+    "url": "https://github.com/Microsoft/code-push.git"
   },
   "author": "Microsoft Corporation",
-  "license": "Apache 2.0",
-  "homepage": "https://github.com/xtransferorg/code-push",
+  "license": "MIT",
+  "homepage": "https://microsoft.github.io/code-push",
   "dependencies": {
     "q": "^1.4.1",
     "recursive-fs": "0.1.4",

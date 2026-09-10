@@ -4,18 +4,12 @@ import type {
   BuildType,
   Environment,
   UpdateType,
-} from '@xrnjs/code-push-core/dist/types'
-
-export enum NativeAppVersionStatus {
-  ReadyForReview = 'ready_for_review',
-  PendingReview = 'pending_review',
-  Rollout = 'rollout',
-  Published = 'published',
-  Discarded = 'discarded',
-}
+  NativeAppVersionStatus,
+} from '@xrnjs/code-push-core'
 
 export interface NativeAppVersionsInterface extends Model {
-  id: bigint
+  id: number
+  app_meta_id: number
   version_id: string // 唯一id
   app_key: string
   version_number: string // 20240101，主要用于在同一个版本下的不同构建（前提条件是同一个版本对外暴露的能力一致）
@@ -33,16 +27,26 @@ export interface NativeAppVersionsInterface extends Model {
   update_type: UpdateType // 强制更新或静默更新
   channel?: string
   app_format?: string
+  package_size?: number
+  download_url_arm32?: string
+  download_url_arm64?: string
+  created_at?: string
+  review_passed?: number
 }
 
 export const NativeAppVersions = sequelize.define<NativeAppVersionsInterface>(
   'NativeAppVersions',
   {
     id: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
       autoIncrement: true,
       comment: '自增id',
+    },
+    app_meta_id: {
+      type: DataTypes.INTEGER.UNSIGNED,
+      allowNull: false,
+      comment: '版本meta信息',
     },
     version_id: {
       type: DataTypes.STRING(64),
@@ -80,6 +84,14 @@ export const NativeAppVersions = sequelize.define<NativeAppVersionsInterface>(
     download_url: {
       type: DataTypes.STRING(2048),
       comment: '版本的下载链接（OSS的文件地址，用于生产环境）',
+    },
+    download_url_arm32: {
+      type: DataTypes.STRING(2048),
+      comment: '32位版本的下载链接（OSS的文件地址，用于生产环境）',
+    },
+    download_url_arm64: {
+      type: DataTypes.STRING(2048),
+      comment: '64位版本的下载链接（OSS的文件地址，用于生产环境）',
     },
     rollout: {
       type: DataTypes.TINYINT.UNSIGNED,
@@ -120,6 +132,12 @@ export const NativeAppVersions = sequelize.define<NativeAppVersionsInterface>(
       defaultValue: 'Silent',
       comment: '更新类型，强更或静默',
     },
+    package_size: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: false,
+      defaultValue: 0,
+      comment: '包的大小，单位：字节',
+    },
     channel: {
       type: DataTypes.STRING(50),
       comment: '发布渠道，例如华为、Google等',
@@ -127,6 +145,16 @@ export const NativeAppVersions = sequelize.define<NativeAppVersionsInterface>(
     app_format: {
       type: DataTypes.STRING(50),
       comment: '应用的格式，例如 apk、ipa',
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      comment: '创建时间',
+    },
+    review_passed: {
+      type: DataTypes.TINYINT.UNSIGNED,
+      allowNull: true,
+      defaultValue: 0,
+      comment: '审核是否通过：0：未通过，1：通过',
     },
   },
   {

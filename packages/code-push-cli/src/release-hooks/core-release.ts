@@ -4,19 +4,20 @@ import recursiveFs from 'recursive-fs'
 import slash from 'slash'
 import yazl from 'yazl'
 
-import { Package, PackageInfo } from '@xrnjs/code-push-core/script/types'
+import { Package, PackageInfo } from '@xrnjs/code-push-core'
 import { out } from '../util/interaction'
 import { generateRandomFilename } from '../lib/file-utils'
 import * as cli from '../definitions/cli'
 
 const progress = require('progress')
 
-import AccountManager = require('@xrnjs/code-push-core')
+import CoreModules = require('@xrnjs/code-push-core')
+const { AccountManager } = CoreModules
 
 var coreReleaseHook: cli.ReleaseHook = (
   currentCommand: cli.IReleaseCommand,
   originalCommand: cli.IReleaseCommand,
-  sdk: AccountManager,
+  sdk: InstanceType<typeof AccountManager>,
 ): Promise<cli.IReleaseCommand> => {
   return Promise.resolve(<void>null)
     .then(() => {
@@ -126,11 +127,11 @@ var coreReleaseHook: cli.ReleaseHook = (
         .then((packages): void => {
           // 输出热更新包的信息
           // 外部cli可能会调用此cli，输出信息不允许删除
-          out.printJson(packages)
+          out.printJson({ ...packages, packagePath })
         })
         .then(() => currentCommand)
         .finally(() => {
-          fs.unlinkSync(packagePath)
+          // fs.unlinkSync(packagePath)
         })
     })
 }

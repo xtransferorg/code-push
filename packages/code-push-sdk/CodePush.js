@@ -6,13 +6,8 @@ import RestartManager from './RestartManager'
 import log from './logging'
 import hoistStatics from 'hoist-non-react-statics'
 import { NativeCodePushState } from './constant'
+import NativeCodePush from './src/NativeCodePush'
 
-let NativeCodePush
-if (Platform.OS === 'harmony') {
-  NativeCodePush = require('./src/NativeCodePush').default
-} else {
-  NativeCodePush = require('react-native').NativeModules.CodePush
-}
 const PackageMixins = require('./package-mixins')(NativeCodePush)
 
 async function checkForUpdate(
@@ -65,6 +60,7 @@ async function checkForUpdate(
   const update = await sdk.queryUpdateWithCurrentPackage({
     ...queryPackage,
     basePackageHash: nativeConfig.packageHash,
+    commonHash: nativeConfig.commonHash,
   })
 
   /*
@@ -382,6 +378,14 @@ function setUpTestDependencies(testSdk, providedTestConfig, testNativeBridge) {
   if (testNativeBridge) NativeCodePush = testNativeBridge
 }
 
+function isNativeSyncInProgress() {
+  if (NativeCodePush.isNativeSyncing) {
+    return !!NativeCodePush.isNativeSyncing()
+  }
+
+  return false
+}
+
 // This function allows only one syncInternal operation to proceed at any given time.
 // Parallel calls to sync() while one is ongoing yields CodePush.SyncStatus.SYNC_IN_PROGRESS.
 const sync = (() => {
@@ -417,7 +421,7 @@ const sync = (() => {
       }
     }
 
-    if (syncInProgress) {
+    if (syncInProgress || isNativeSyncInProgress()) {
       typeof syncStatusCallbackWithTryCatch === 'function'
         ? syncStatusCallbackWithTryCatch(CodePush.SyncStatus.SYNC_IN_PROGRESS)
         : log('Sync already in progress.')
@@ -785,6 +789,8 @@ if (NativeCodePush) {
     isFileExist: NativeCodePush.isFileExist,
     getIntlResourcePath: NativeCodePush.getIntlResourcePath,
     clearUpdates: NativeCodePush.clearUpdates,
+    isAssetBundleFileExists: NativeCodePush.isAssetBundleFileExists,
+    getBasePackageBundlePath: NativeCodePush.getBasePackageBundlePath,
     InstallMode: {
       IMMEDIATE: NativeCodePushState.codePushInstallModeImmediate, // Restart the app immediately
       ON_NEXT_RESTART: NativeCodePushState.codePushInstallModeOnNextRestart, // Don't artificially restart the app. Allow the update to be "picked up" on the next app restart

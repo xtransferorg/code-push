@@ -15,19 +15,19 @@ export interface Spec extends TurboModule {
   codePushUpdateStateRunning: () => number
   codePushUpdateStatePending: () => number
   codePushUpdateStateLatest: () => number
-  sync(): Promise<any>
+  sync(): Promise<Object>
   isFailedUpdate(packageHash: string): Promise<boolean>
   allow(): void
   clearPendingRestart(): void
   disallow(): void
-  restartApp(onlyIfUpdateIsPending: boolean): void
+  restartApp(onlyIfUpdateIsPending: boolean): Promise<boolean>
   downloadUpdate(
     updatePackage: Object,
     notifyProgress: boolean,
-  ): Promise<Record<string, any>>
-  getConfiguration(): Promise<object>
+  ): Promise<Object>
+  getConfiguration(): Promise<Object>
   getUpdateMetadata(updateState: number): Promise<object>
-  getNewStatusReport(): Promise<object>
+  getNewStatusReport(): Promise<Object>
   installUpdate(
     updatePackage: Object,
     installMode: number,
@@ -43,6 +43,12 @@ export interface Spec extends TurboModule {
   clearUpdates(): void
   isFileExist(path: string): boolean
   getIntlResourcePath(path: string): string
+  isNativeSyncing(): boolean
+  isAssetBundleFileExists(): boolean
+  getBasePackageBundlePath(): string
+  addListener?(eventName: string): void
+  removeListeners?(count: number): void
+  beforeLoadBizBundleHandlePendingUpdate?(): void
 }
 
 export default TurboModuleRegistry.get<Spec>('RTNCodePush') as Spec | null
