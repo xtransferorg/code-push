@@ -33,12 +33,7 @@
     "url": "https://github.com/Microsoft/react-native-code-push"
   },
   "scripts": {
-    "watch": "nodemon --ignore dist/  --ignore lib/ --ignore node_modules/ --watch ./ -C -e js,jsx,ts,tsx,css,less --debug -x 'yalc publish'",
-    "oh-codegen": "react-native codegen-harmony --cpp-output-path ./harmony/entry/src/main/cpp/generated --rnoh-module-path ./harmony/codePush/oh_modules/@rnoh/react-native-openharmony",
-    "ohpm-install": "cd harmony && ohpm install",
-    "copy-har": "cp ./harmony/codePush/build/default/outputs/default/codePush.har ./harmony/codePush.har",
-    "build-har": "cd harmony && hvigorw --mode module -p product=default -p module=codePush@default assembleHar --analyze=normal --parallel --incremental --daemon",
-    "build": "npm run ohpm-install && npm run oh-codegen && npm run build-har && npm run copy-har"
+    "watch": "nodemon --ignore dist/  --ignore lib/ --ignore node_modules/ --watch ./ -C -e js,jsx,ts,tsx,css,less --debug -x 'yalc publish'"
   },
   "dependencies": {
     "@xrnjs/code-push-core": "workspace:*",
