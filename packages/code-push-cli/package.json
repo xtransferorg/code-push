@@ -1,6 +1,6 @@
 {
   "name": "@xrnjs/code-push-cli",
-  "version": "1.0.13",
+  "version": "0.1.0",
   "description": "Management CLI for the CodePush service",
   "main": "bin/index.js",
   "scripts": {

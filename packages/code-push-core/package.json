@@ -1,6 +1,6 @@
 {
   "name": "@xrnjs/code-push-core",
-  "version": "1.0.12",
+  "version": "0.1.0",
   "description": "Management SDK for the CodePush service",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
