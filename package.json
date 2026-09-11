@@ -12,6 +12,7 @@
     "prepublishOnly": "pnpm run build",
     "publish:beta": "pnpm build && pnpm publish --tag beta -r --no-git-checks",
     "publish:prod": "pnpm build && pnpm publish -r",
+    "publish:local-registry": "NPM_CONFIG_USERCONFIG=${XRN_LOCAL_NPM_USERCONFIG:-/Users/lianyongsheng/workspace/xrn-inneropenbranch-rnupgrade/.local-npm-registry/npmrc} pnpm --filter @xrnjs/code-push-core --filter @xrnjs/code-push-cli --filter @xrnjs/react-native-code-push publish --registry http://127.0.0.1:4873/ --no-git-checks",
     "prepare": "husky",
     "lint": "lint-staged",
     "test": "pnpm test -r"

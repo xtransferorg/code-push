@@ -1,5 +1,5 @@
 {
-  "name": "react-native-code-push-xt",
+  "name": "@xrnjs/react-native-code-push",
   "version": "2.2.5",
   "description": "React Native plugin for the CodePush service",
   "main": "CodePush.js",
@@ -13,7 +13,7 @@
   "author": "Microsoft Corporation",
   "license": "MIT",
   "harmony": {
-    "alias": "react-native-code-push-xt",
+    "alias": "react-native-code-push",
     "codegenConfig": {
       "specPaths": [
         "./src"
@@ -80,7 +80,7 @@
       ]
     },
     "commands": {
-      "postlink": "node node_modules/react-native-code-push-xt/scripts/postlink/run"
+      "postlink": "node node_modules/@xrnjs/react-native-code-push/scripts/postlink/run"
     }
   }
 }
