@@ -16,6 +16,7 @@ import { CodePushUnknownException } from './CodePushUnknownException'
 import { CodePushInvalidUpdateException } from './CodePushInvalidUpdateException'
 import FileUtils from './FileUtils'
 import Logger from './Logger'
+import { common } from '@kit.AbilityKit'
 
 const TAG = 'CodePushNativeModule-CodePushUpdateUtils: '
 
@@ -29,7 +30,21 @@ let listFileOption: ListFileOptions = {
   },
 }
 
+const runningPackageMap: Map<string, string> = new Map()
+
 export class CodePushUpdateUtils {
+
+  public static getRunningPackageHash(bundleName: string): string {
+    return !!bundleName ? runningPackageMap.get(bundleName) : undefined
+  }
+
+  public static setRunningPackageHash(bundleName: string, packageHash: string) {
+    if (!bundleName || !packageHash) {
+      return
+    }
+    runningPackageMap.set(bundleName, packageHash)
+  }
+
   // public static final String NEW_LINE = System.getProperty("line.separator");
   public static isHashIgnored(relativeFilePath: string) {
     const __MACOSX: string = '__MACOSX/'
@@ -89,6 +104,27 @@ export class CodePushUpdateUtils {
       }
       return ''
     }
+  }
+
+  public static getBasePackageHashFromRawfile(context: common.Context, deploymentKey: string): string | null {
+    console.log('getBasePackageHashFromRawfile-delopmentKey=' + deploymentKey)
+    if (!deploymentKey) {
+      return null
+    }
+
+    const codepushObj = CodePushUtils.readRawfileJson(context, CodePushConstants.BASE_PACKAGE_HASH_FILE)
+    if (!codepushObj) {
+      return null
+    }
+
+    const baseHashObj = codepushObj[deploymentKey]
+    if (!baseHashObj || !baseHashObj.basePackageHash) {
+      console.log(`getBasePackageHashFromRawfile: no entry for key=${deploymentKey}`)
+      return null
+    }
+
+    const baseHash = baseHashObj?.basePackageHash
+    return baseHash
   }
 
   private static addContentsOfFolderToManifest(

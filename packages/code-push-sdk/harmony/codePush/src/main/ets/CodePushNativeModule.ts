@@ -24,29 +24,24 @@ import { CodePushUnknownException } from './CodePushUnknownException'
 import { TM } from '@rnoh/react-native-openharmony/generated/ts'
 import { window } from '@kit.ArkUI'
 import { RN_INSTANCE_MANAGER } from 'xrn-multi-bundle/ts'
+import deviceInfo from '@ohos.deviceInfo'
 
 import Logger from './Logger'
+import { log } from './nativeCodePush/Logging'
+import { BundleInfoUpdatable } from 'xrn-modules-core/ts'
+import { BundleInfoManager } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfoManager'
+import { CodePushBuilder } from './CodePushBuilder'
 
 const TAG = 'CodePushNativeModule: '
 
 function generateUUID(): string {
-  let uuid = ''
-  const chars = '0123456789abcdef'
-
-  for (let i = 0; i < 32; i++) {
-    const rnd = Math.floor(Math.random() * chars.length)
-    uuid += chars[rnd]
-    if (i === 7 || i === 11 || i === 15 || i === 19) {
-      uuid += '-'
-    }
-  }
-  Logger.info(TAG, `generateUUID uuid = ${uuid}`)
-  return uuid
+  Logger.info(TAG, `generateUUID uuid = ${deviceInfo.ODID}`)
+  return deviceInfo.ODID
 }
 
 export class CodePushNativeModule
   extends UITurboModule
-  implements TM.RTNCodePush.Spec
+  implements TM.RTNCodePush.Spec, BundleInfoUpdatable
 {
   private mBinaryContentsHash: string = ''
   private mClientUniqueId: string = ''
@@ -58,6 +53,9 @@ export class CodePushNativeModule
   private mUpdateManager: CodePushUpdateManager | null = null
   private installMode: number = -1
   private ready: boolean = false
+
+  private serverUrl: string;
+  private commonHash: string;
 
   codePushInstallModeImmediate() {
     return 0
@@ -82,32 +80,59 @@ export class CodePushNativeModule
     return 2
   }
 
-  sync(): Promise<unknown> {
+  isNativeSyncing(): boolean {
+    return this.mCodePush.getNativeSyncing()
+  }
+
+  // 在加载biz bundle前，调用`initializeUpdateAfterRestart`
+  beforeLoadBizBundleHandlePendingUpdate(): void {
+    this.mCodePush?.beforeLoadBizBundleHandlePendingUpdate()
+  }
+
+  sync(): Promise<Object> {
     throw new Error('Method not implemented.')
   }
 
   constructor(
     private rnContext: UITurboModuleContext,
-    codePush: CodePush,
+    codePush: CodePush, commonHash: string, serverUrl: string
   ) {
     super(rnContext)
     Logger.info(TAG, `constructor start`)
+    console.log(`[Preload]-CodePushNativeModule====.constructor:codePush.getDeploymentKey()=${codePush?.getDeploymentKey()}, codePush.bundleInfo=${JSON.stringify(codePush?.bundleInfo)}, commonHash=${codePush?.getCommonHash()}`)
+    this.commonHash = commonHash
+    this.serverUrl = serverUrl
+    this.init(codePush)
+    // Initialize module state while we have a reference to the current context.
+    
+    Logger.info(TAG, `constructor end`)
+  }
+
+  private init(codePush: CodePush) {
+    if (this.mCodePush) {
+      return
+    } else if (!codePush) {
+      return
+    }
     this.mTelemetryManager = new CodePushTelemetryManager(
-      rnContext.uiAbilityContext,
-      codePush.getDeploymentKey(),
+      this.rnContext.uiAbilityContext,
+      codePush.bundleInfo?.bundleName,
+      codePush.getDeploymentKey()
     )
     this.mSettingsManager = new SettingsManager(
-      rnContext.uiAbilityContext,
+      this.rnContext.uiAbilityContext,
+      codePush.bundleInfo?.bundleName,
       codePush.getDeploymentKey(),
     )
     this.mUpdateManager = new CodePushUpdateManager(
-      rnContext.uiAbilityContext,
+      this.rnContext.uiAbilityContext,
       '',
+      codePush.bundleInfo?.bundleName,
       codePush.getDeploymentKey(),
     )
 
     dataPreferences.getPreferences(
-      rnContext.uiAbilityContext,
+      this.rnContext.uiAbilityContext,
       CodePushConstants.CODE_PUSH_PREFERENCES,
       (err: BusinessError, val: dataPreferences.Preferences) => {
         if (err) {
@@ -126,30 +151,36 @@ export class CodePushNativeModule
         Logger.info(TAG, `mClientUniqueId: ${this.mClientUniqueId}`)
         if (this.mClientUniqueId == null) {
           this.mClientUniqueId = generateUUID()
-          this.preferences.put(
+          this.preferences.putSync(
             CodePushConstants.CLIENT_UNIQUE_ID_KEY,
             this.mClientUniqueId,
           )
+          this.preferences.flush()
         }
       },
     )
     this.mCodePush = codePush
-    // Initialize module state while we have a reference to the current context.
-    this.mBinaryContentsHash = CodePushUpdateUtils.getHashForBinaryContents(
-      rnContext.uiAbilityContext,
-      this.mCodePush.isDebugMode,
-    )
-    Logger.info(
-      TAG,
-      `getHashForBinaryContents mBinaryContentsHash: ${this.mBinaryContentsHash}`,
-    )
-    Logger.info(TAG, `constructor end`)
+  }
+
+  updateBundleInfo(bundleName: string): void {
+    if (this.mCodePush) {
+      return
+    }
+    const bundleInfo = BundleInfoManager.INSTANCE.getBundleInfo(bundleName)
+    let codePush = bundleInfo ? new CodePushBuilder(
+      bundleInfo,
+      bundleInfo?.getCodePushKey(),
+      this.serverUrl,
+      this.commonHash
+    ).build(this.ctx) : null
+    console.log(`[Preload]-CodePushNativeModule====.updateBundleInfo:bundleName=${bundleName}, bundleInfo=${JSON.stringify(bundleInfo)}`)
+    this.init(codePush)
   }
 
   async downloadUpdate(
     updatePackage: Record<string, any>,
     notifyProgress: boolean,
-  ): Promise<Record<string, any>> {
+  ): Promise<Object> {
     Logger.info(
       TAG,
       `downloadUpdate, updatePackage: ${JSON.stringify(updatePackage)}`,
@@ -185,7 +216,7 @@ export class CodePushNativeModule
     }
   }
 
-  async getConfiguration(): Promise<object> {
+  async getConfiguration(): Promise<Object> {
     Logger.info(TAG, `getConfiguration start`)
 
     interface ConfigMap {
@@ -194,18 +225,28 @@ export class CodePushNativeModule
       deploymentKey: string
       serverUrl: string
       packageHash?: string
+      commonHash?: string
     }
 
-    let configMap: ConfigMap = {
-      appVersion: this.mCodePush.getAppVersion(),
-      clientUniqueId: this.mClientUniqueId,
-      deploymentKey: this.mCodePush.getDeploymentKey(),
-      serverUrl: this.mCodePush?.getServerUrl(),
+    let configMap: ConfigMap = {...CodePushUtils.getConfiguration(this.mCodePush, this.mClientUniqueId)}
+
+    const expectedBundleFileName = this.mCodePush.bundleInfo.getJSBundleName()
+    const hasRawBundle = CodePushUtils.rawfileExists(this.rnContext.uiAbilityContext, expectedBundleFileName)
+    let basePackageHash = ''
+    
+    if (hasRawBundle) {
+      basePackageHash = CodePushUpdateUtils.getBasePackageHashFromRawfile(
+        this.rnContext.uiAbilityContext,
+        this.mCodePush?.getDeploymentKey()
+      ) || ''
+    } else {
+      basePackageHash = this.mUpdateManager.getBasePackageHash() || ''
     }
-    if (this.mBinaryContentsHash != null) {
-      configMap[CodePushConstants.PACKAGE_HASH_KEY] = this.mBinaryContentsHash
-    }
-    Logger.info(TAG, `getConfiguration configMap: ${JSON.stringify(configMap)}`)
+    
+    configMap[CodePushConstants.PACKAGE_HASH_KEY] = basePackageHash
+    Logger.info(TAG, `getConfiguration start：bssePackageHash=${basePackageHash}`)
+
+    Logger.info(TAG, `[Preload]-getConfiguration configMap: ${JSON.stringify(configMap)}, bundleName=${this.mCodePush?.bundleInfo?.bundleName}`)
     return new Promise((resolve) => {
       resolve(configMap)
     })
@@ -293,11 +334,12 @@ export class CodePushNativeModule
     }
   }
 
-  async getNewStatusReport(): Promise<object> {
+  async getNewStatusReport(): Promise<Object> {
     this.mUpdateManager == null &&
       (this.mUpdateManager = new CodePushUpdateManager(
         this.rnContext.uiAbilityContext,
         '',
+        this.mCodePush.bundleInfo?.bundleName,
         this.mCodePush.getDeploymentKey(),
       ))
     try {
@@ -445,13 +487,13 @@ export class CodePushNativeModule
     })
   }
 
-  async restartApp(onlyIfUpdateIsPending: boolean) {
+  async restartApp(onlyIfUpdateIsPending: boolean): Promise<boolean> {
     try {
       this.restartAppInternal(onlyIfUpdateIsPending)
-      return null
+      return Promise.resolve(true)
     } catch (e) {
       Logger.info(TAG, e)
-      return e
+      return Promise.reject(e)
     }
   }
 
@@ -483,6 +525,7 @@ export class CodePushNativeModule
     try {
       new CodePushTelemetryManager(
         this.rnContext.uiAbilityContext,
+        this.mCodePush?.bundleInfo?.bundleName,
         this.mCodePush.getDeploymentKey(),
       ).recordStatusReported(statusReport)
     } catch (err) {
@@ -494,6 +537,7 @@ export class CodePushNativeModule
     try {
       new CodePushTelemetryManager(
         this.rnContext.uiAbilityContext,
+        this.mCodePush.bundleInfo?.bundleName,
         this.mCodePush.getDeploymentKey(),
       ).saveStatusReportForRetry(statusReport)
     } catch (err) {
@@ -522,7 +566,12 @@ export class CodePushNativeModule
 
   async notifyApplicationReady() {
     try {
-      this.mSettingsManager.removePendingUpdate()
+      const pendingPackageHash = this.mSettingsManager?.getPendingUpdate()?.[CodePushConstants.PENDING_UPDATE_HASH_KEY]
+      const runningPackageHash = CodePushUpdateUtils.getRunningPackageHash(this.mCodePush.bundleInfo.bundleName)
+      log(`[Preload]-initializeUpdateAfterRestart.notifyApplicationReady:pendingPackageHas${pendingPackageHash}, runningPackageHash=${runningPackageHash}, bundleName=${this.mCodePush?.bundleInfo?.bundleName}, this=${this}`)
+      if (pendingPackageHash && (!runningPackageHash || pendingPackageHash === runningPackageHash)) {
+        this.mSettingsManager.removePendingUpdate()
+      }
       return Promise.resolve('')
     } catch (err) {
       CodePushUtils.log(err)
@@ -547,7 +596,7 @@ export class CodePushNativeModule
 
   private async loadBundle(): Promise<void> {
     this.ready = true
-    this.mCodePush.initializeUpdateAfterRestart()
+    // this.mCodePush.initializeUpdateAfterRestart()
     Logger.info(TAG, 'restartAppInternal RELOAD end')
 
     if (
@@ -589,6 +638,7 @@ export class CodePushNativeModule
         bundleParentDir.getParent() || '',
         path.replace('asset://', ''),
       )
+      // log(`${TAG}.isFileExist: path=${path}, fullPath=${fullPath}`)
       return fs.statSync(fullPath).isFile()
     } catch {
       return false
@@ -597,5 +647,19 @@ export class CodePushNativeModule
 
   public getIntlResourcePath(path: string) {
     return 'resource://RAWFILE/assets/' + path
+  }
+
+  isAssetBundleFileExists(): boolean {
+    return false;
+  }
+
+  getBasePackageBundlePath(): string {
+    return "";
+  }
+
+  addListener(eventName: string): void {
+  }
+
+  removeListeners(count: number): void {
   }
 }

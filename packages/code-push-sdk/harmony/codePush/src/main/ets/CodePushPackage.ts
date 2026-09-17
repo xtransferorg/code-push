@@ -20,26 +20,41 @@ import { bundleManager } from '@kit.AbilityKit'
 import Logger from './Logger'
 import { CodePushConstants } from './CodePushConstants'
 import { getCurrentAppVersionName } from './Utils'
+import { BundleInfoUpdatable } from 'xrn-modules-core/ts'
+import { BundleInfoManager } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfoManager'
+import { JSON } from '@kit.ArkTS'
 
 const TAG = 'CodePushNativeModule-CodePushPackage: '
 
-class CodePushModulesFactory extends UITurboModuleFactory {
+class CodePushModulesFactory extends UITurboModuleFactory implements BundleInfoUpdatable {
   constructor(
     ctx: UITurboModuleContext,
     private bundleInfo: any,
     private serverUrl: string,
+    private commonHash: string,
   ) {
     super(ctx)
   }
 
+  updateBundleInfo(bundleName: string): void {
+    console.log(`[Preload]-CodePushModulesFactory.updateBundleInfo:bundleName=${bundleName}, bundleInfo=${JSON.stringify(this.bundleInfo)}`)
+    if (!this.bundleInfo) {
+      const bundleInfo = BundleInfoManager.INSTANCE.getBundleInfo(bundleName)
+      this.bundleInfo = bundleInfo
+    }
+  }
+
   createTurboModule(name: string): UITurboModule | null {
     if (name === TM.RTNCodePush.NAME) {
-      let codePush = new CodePushBuilder(
+      console.log(`[Preload]-CodePushModulesFactory.createTurboModule:bundleInfo=${JSON.stringify(this.bundleInfo)}`)
+      let codePush = this.bundleInfo ? new CodePushBuilder(
         this.bundleInfo,
         this.bundleInfo?.getCodePushKey(),
         this.serverUrl,
-      ).build(this.ctx)
-      return new CodePushNativeModule(this.ctx, codePush)
+        this.commonHash
+      ).build(this.ctx) : null
+      const module = new CodePushNativeModule(this.ctx, codePush, this.commonHash, this.serverUrl)
+      return module
     }
     return null
   }
@@ -54,12 +69,14 @@ export class CodePushPackage extends RNPackage {
     ctx: RNPackageContext,
     private bundleInfo: any,
     private serverUrl: string,
+    private commonHash: string,
   ) {
     super(ctx)
   }
 
   createTurboModulesFactory(ctx: UITurboModuleContext): UITurboModuleFactory {
-    return new CodePushModulesFactory(ctx, this.bundleInfo, this.serverUrl)
+    console.log(`[Preload]-CodePushPackage.createTurboModulesFactory:this.bundleInfo=${JSON.stringify(this.bundleInfo)}, this.serverUrl=${this.serverUrl}, this.commonHash=${this.commonHash}`)
+    return new CodePushModulesFactory(ctx, this.bundleInfo, this.serverUrl, this.commonHash)
   }
 }
 

@@ -62,7 +62,12 @@ describe('api/apps/release.test.js', function () {
       request
         .post(`/apps`)
         .set('Authorization', `Bearer ${bearerToken}`)
-        .send({ name: appName, os: 'iOS', platform: 'React-Native' })
+        .send({
+          name: appName,
+          os: 'iOS',
+          platform: 'React-Native',
+          buildType: 'release',
+        })
         .end(function (err, res) {
           should.not.exist(err)
           res.status.should.equal(200)

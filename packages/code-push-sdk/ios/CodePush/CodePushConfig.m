@@ -14,6 +14,7 @@ static NSString * const DeploymentKeyConfigKey = @"deploymentKey";
 static NSString * const ServerURLConfigKey = @"serverUrl";
 static NSString * const PublicKeyKey = @"publicKey";
 static NSString * const BasePackageHashKey = @"basePackageHash";
+static NSString * const CommonHash = @"commonHash";
 
 - (instancetype)init
 {
@@ -25,13 +26,15 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
     NSString *deploymentKey = [infoDictionary objectForKey:@"CodePushDeploymentKey"];
     NSString *serverURL = [infoDictionary objectForKey:@"CodePushServerURL"];
     NSString *publicKey = [infoDictionary objectForKey:@"CodePushPublicKey"];
+		NSString *commonHash = [infoDictionary objectForKey:@"CommonBundleHash"];
     
     NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
     NSString *clientUniqueId = [userDefaults stringForKey:ClientUniqueIDConfigKey];
     if (clientUniqueId == nil) {
-        clientUniqueId = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
-        [userDefaults setObject:clientUniqueId forKey:ClientUniqueIDConfigKey];
-        [userDefaults synchronize];
+//        clientUniqueId = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
+//        [userDefaults setObject:clientUniqueId forKey:ClientUniqueIDConfigKey];
+//        [userDefaults synchronize];
+        clientUniqueId = [self getClientUniqueId];
     }
 
     if (!serverURL) {
@@ -46,6 +49,10 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
     if (clientUniqueId) [_configDictionary setObject:clientUniqueId forKey:ClientUniqueIDConfigKey];
     if (deploymentKey) [_configDictionary setObject:deploymentKey forKey:DeploymentKeyConfigKey];
     if (publicKey) [_configDictionary setObject:publicKey forKey:PublicKeyKey];
+	
+		if (commonHash) [_configDictionary setObject:commonHash forKey:CommonHash];
+	
+		CPLog(@"_configDictionary：%@", _configDictionary);
 
     return self;
 }
@@ -62,7 +69,14 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
 
 - (NSDictionary *)configuration
 {
-    return _configDictionary;
+		NSMutableDictionary *newDic = [NSMutableDictionary dictionaryWithDictionary:_configDictionary];
+		
+		NSString *clientUniqueId = [self getClientUniqueId];
+		if (clientUniqueId) {
+			[newDic setObject:clientUniqueId forKey:ClientUniqueIDConfigKey];
+		}
+	
+		return newDic;
 }
 
 - (NSString *)deploymentKey
@@ -77,7 +91,7 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
 
 - (NSString *)clientUniqueId
 {
-    return [_configDictionary objectForKey:ClientUniqueIDConfigKey];
+	return [self getClientUniqueId];
 }
 
 - (NSString *)publicKey
@@ -88,6 +102,10 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
 - (NSString *)basePackageHash
 {
     return [_configDictionary objectForKey:BasePackageHashKey];
+}
+
+- (NSString *)commonHash {
+	return [_configDictionary objectForKey:CommonHash];
 }
 
 - (void)setAppVersion:(NSString *)appVersion
@@ -122,7 +140,44 @@ static NSString * const BasePackageHashKey = @"basePackageHash";
             basePackageHash = jsonDict[deploymentKey][@"basePackageHash"];
         }
     }
+		
+		if (!basePackageHash && ![self.package isBinaryBundle]) {
+			NSError *error;
+			basePackageHash = [self.package getDynamicBundleBasePackageHash:&error];
+		}
+	
     return basePackageHash;
+}
+
+- (NSString *)getClientUniqueId {
+	
+	NSString *clientUniqueId = [self randomUUID];
+
+	NSNumber *isPolicyGranted = [[NSUserDefaults standardUserDefaults] objectForKey:@"isPolicyGranted"];
+//	CPLog(@"isPolicyGranted：%@", isPolicyGranted);
+
+	if ([isPolicyGranted boolValue]) {
+		clientUniqueId = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
+		
+		NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
+		[userDefaults setObject:clientUniqueId forKey:ClientUniqueIDConfigKey];
+		[userDefaults synchronize];
+	}
+	
+//	CPLog(@"clientUniqueId：%@", clientUniqueId);
+	return clientUniqueId;
+}
+
+- (NSString *)randomUUID {
+		if(NSClassFromString(@"NSUUID")) {
+				return [[NSUUID UUID] UUIDString];
+		}
+		CFUUIDRef uuidRef = CFUUIDCreate(kCFAllocatorDefault);
+		CFStringRef cfuuid = CFUUIDCreateString(kCFAllocatorDefault, uuidRef);
+		CFRelease(uuidRef);
+		NSString *uuid = [((__bridge NSString *) cfuuid) copy];
+		CFRelease(cfuuid);
+		return uuid;
 }
 
 //no setter for PublicKey, because it's need to be hard coded within Info.plist for safety

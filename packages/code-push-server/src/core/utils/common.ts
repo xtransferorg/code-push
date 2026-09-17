@@ -9,10 +9,11 @@ import { Logger } from '../logger'
 import _ from 'lodash'
 import fetch from 'node-fetch'
 import validator from 'validator'
-import { AppError } from '../app-error'
+import { AppError, ErrorCode } from '../app-error'
 import { config } from '../config'
 import recursiveReadDir from 'recursive-readdir'
 import archiver from 'archiver'
+import { BundlePlatformMapType, SystemType } from '@xrnjs/code-push-core'
 
 const streamPipeline = util.promisify(pipeline)
 
@@ -322,4 +323,37 @@ export async function removeParentFolder(folder: string, logger: Logger) {
   } catch (err) {
     logger.error(`处理目录失败: ${err.message}`)
   }
+}
+
+export const BUNDLE_OS_TYPE_MAP = {
+  [SystemType.IOS]: BundlePlatformMapType.IOS,
+  [SystemType.ANDROID]: BundlePlatformMapType.ANDROID,
+  [SystemType.HARMONY]: BundlePlatformMapType.HARMONY,
+}
+
+// 反向映射：从数字获取字符串
+export const BUNDLE_OS_TYPE_REVERSE_MAP = {
+  [BundlePlatformMapType.IOS]: SystemType.IOS,
+  [BundlePlatformMapType.ANDROID]: SystemType.ANDROID,
+  [BundlePlatformMapType.HARMONY]: SystemType.HARMONY,
+}
+
+export function getBundleOsType(os: SystemType) {
+  const osType = BUNDLE_OS_TYPE_MAP[os as SystemType]
+  if (!osType) {
+    throw new AppError(`Invalid os type: ${os}`, ErrorCode.PARAMS_INVALID, 400)
+  }
+  return osType
+}
+
+export function getBundleOsTypeString(osType: BundlePlatformMapType) {
+  const os = BUNDLE_OS_TYPE_REVERSE_MAP[osType as BundlePlatformMapType]
+  if (!os) {
+    throw new AppError(
+      `Invalid os type number: ${osType}`,
+      ErrorCode.PARAMS_INVALID,
+      400,
+    )
+  }
+  return os
 }

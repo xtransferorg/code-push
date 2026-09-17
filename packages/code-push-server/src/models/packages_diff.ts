@@ -1,7 +1,7 @@
 import { DataTypes, Model } from 'sequelize'
 import { sequelize } from '../core/utils/connections'
 
-interface PackagesDiffInterface extends Model {
+export interface PackagesDiffInterface extends Model {
   id: number
   package_id: number
   diff_against_package_hash: string

@@ -4,7 +4,7 @@
 
 | 服务 | 现在的版本 | 开源的版本 |
 |:---:|:----:|:----:|
-| @xrnjs/code-push-cli | 0.0.1 | 2.6.5 |
+| @xrnjs/code-push-cli | 1.0.0 | 2.6.5 |
 
 CodePush是一个云服务，它能让Cordova和React Native的开发者将手机应用的更新直接部署到用户的设备上。
 它担任类似中间仓库的角色，开发者可以把更新（JS，HTML，CSS和图片）发布到这个仓库上，然后那些Apps就能查询到更新了（那些集成了CodePush SDKs的[Cordova](http://github.com/Microsoft/cordova-plugin-code-push)和[React Native](http://github.com/Microsoft/react-native-code-push) 应用）。

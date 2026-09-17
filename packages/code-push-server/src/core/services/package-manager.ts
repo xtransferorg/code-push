@@ -16,9 +16,12 @@ import {
   generateDeploymentsLabelId,
 } from '../../models/deployments'
 import { DeploymentsHistory } from '../../models/deployments_history'
-import { DeploymentsVersions } from '../../models/deployments_versions'
+import {
+  DeploymentsVersions,
+  DeploymentsVersionsInterface,
+} from '../../models/deployments_versions'
 import { Packages, PackagesInterface } from '../../models/packages'
-import { PackagesDiff } from '../../models/packages_diff'
+import { PackagesDiff, PackagesDiffInterface } from '../../models/packages_diff'
 import { PackagesMetrics } from '../../models/packages_metrics'
 import { AppError, ErrorCode } from '../app-error'
 import {
@@ -52,13 +55,13 @@ import { qetag } from '../utils/qetag'
 import { randToken, uploadPackageType } from '../utils/security'
 import { uploadFileToStorage } from '../utils/storage'
 import { dataCenterManager } from './datacenter-manager'
-import { PackageInfo, ReleaseInfo } from '@xrnjs/code-push-core/script/types'
-import AccountManager from '@xrnjs/code-push-core'
+import { PackageInfo, ReleaseInfo, AccountManager } from '@xrnjs/code-push-core'
 import { Releases } from '../../models/releases'
 import { config } from '../config'
 import { diff } from '../diff'
-import download from 'download'
 import fspromise from 'fs/promises'
+import { exec } from 'child_process'
+import util from 'util'
 
 class PackageManager {
   getMetricsbyPackageId(packageId) {
@@ -130,7 +133,12 @@ class PackageManager {
         min_version: minVersion,
         max_version: maxVersion,
       },
-      defaults: { current_package_id: 0 },
+      defaults: {
+        current_package_id: 0,
+        app_version: appVersion,
+        min_version: minVersion,
+        max_version: maxVersion,
+      },
       transaction: t,
     }).then(([data, created]) => {
       if (created) {
@@ -182,10 +190,11 @@ class PackageManager {
     return true
   }
 
-  createPackage(
+  async createPackage(
     deploymentId,
     appVersion,
     packageHash,
+    commonHash: string,
     manifestHash: string,
     blobHash: string,
     params,
@@ -204,58 +213,83 @@ class PackageManager {
     const uuid = params.uuid || null
     const releaseId = params.releaseId || null
     const app_binary_time = params.appBinaryTime || null
-    return generateDeploymentsLabelId(deploymentId, t1).then((labelId) => {
-      return sequelize.transaction({ transaction: t1 }, (t) => {
-        return this.createDeploymentsVersionIfNotExist(
-          deploymentId,
-          appVersion,
-          params.min_version,
-          params.max_version,
-          t,
-          logger,
-        ).then(async (deploymentsVersions) => {
-          return Packages.create(
-            {
+
+    // 生成部署标签ID
+    const labelId = await generateDeploymentsLabelId(deploymentId, t1)
+
+    // 在事务中执行数据库操作
+    return await sequelize.transaction({ transaction: t1 }, async (t) => {
+      // 创建或获取部署版本
+      const deploymentsVersions = await this.createDeploymentsVersionIfNotExist(
+        deploymentId,
+        appVersion,
+        params.min_version,
+        params.max_version,
+        t,
+        logger,
+      )
+
+      // 创建包记录
+      const packages = await Packages.create(
+        {
+          deployment_version_id: deploymentsVersions.id,
+          deployment_id: deploymentId,
+          description,
+          package_hash: packageHash,
+          blob_url: blobHash,
+          size,
+          manifest_blob_url: manifestHash,
+          release_method: releaseMethod,
+          label: `v${labelId}`,
+          released_by: releaseUid,
+          is_mandatory: isMandatory,
+          is_disabled: isDisabled,
+          common_hash: commonHash || null,
+          uuid: uuid,
+          rollout,
+          release_id: releaseId,
+          original_label: originalLabel,
+          original_deployment: originalDeployment,
+          app_binary_time: app_binary_time,
+        },
+        { transaction: t },
+      )
+
+      // 更新部署版本的当前包ID
+      deploymentsVersions.set('current_package_id', packages.id)
+
+      // 新包发布完成后，禁用这个发布单上之前发布的包
+      if (releaseId) {
+        await Packages.update(
+          { is_disabled: IS_DISABLED_YES },
+          {
+            where: {
               deployment_version_id: deploymentsVersions.id,
-              deployment_id: deploymentId,
-              description,
-              package_hash: packageHash,
-              blob_url: blobHash,
-              size,
-              manifest_blob_url: manifestHash,
-              release_method: releaseMethod,
-              label: `v${labelId}`,
-              released_by: releaseUid,
-              is_mandatory: isMandatory,
-              is_disabled: isDisabled,
-              uuid: uuid,
-              rollout,
               release_id: releaseId,
-              original_label: originalLabel,
-              original_deployment: originalDeployment,
-              app_binary_time: app_binary_time,
+              id: {
+                [Op.ne]: packages.id, // 不禁用刚创建的包
+              },
             },
-            { transaction: t },
-          ).then((packages) => {
-            deploymentsVersions.set('current_package_id', packages.id)
-            return Promise.all([
-              deploymentsVersions.save({ transaction: t }),
-              Deployments.update(
-                { last_deployment_version_id: deploymentsVersions.id },
-                { where: { id: deploymentId }, transaction: t },
-              ),
-              PackagesMetrics.create(
-                { package_id: packages.id },
-                { transaction: t },
-              ),
-              DeploymentsHistory.create(
-                { deployment_id: deploymentId, package_id: packages.id },
-                { transaction: t },
-              ),
-            ]).then(() => packages)
-          })
-        })
-      })
+            transaction: t,
+          },
+        )
+      }
+
+      // 并行执行相关的数据库更新操作
+      await Promise.all([
+        deploymentsVersions.save({ transaction: t }),
+        Deployments.update(
+          { last_deployment_version_id: deploymentsVersions.id },
+          { where: { id: deploymentId }, transaction: t },
+        ),
+        PackagesMetrics.create({ package_id: packages.id }, { transaction: t }),
+        DeploymentsHistory.create(
+          { deployment_id: deploymentId, package_id: packages.id },
+          { transaction: t },
+        ),
+      ])
+
+      return packages
     })
   }
 
@@ -534,15 +568,13 @@ class PackageManager {
     releaseUid: number,
     logger: Logger,
   ) {
-    const { appVersion, appBinaryTime } = packageInfo
+    const { appVersion, appBinaryTime, commonHash } = packageInfo
     const versionInfo = validatorVersion(appVersion)
     if (!versionInfo[0]) {
       logger.debug(
         `releasePackage targetBinaryVersion ${appVersion} not support.`,
       )
-      return Promise.reject(
-        new AppError(`targetBinaryVersion ${appVersion} not support.`),
-      )
+      throw new AppError(`targetBinaryVersion ${appVersion} not support.`)
     }
     const { description } = packageInfo // 描述
     const { isDisabled } = packageInfo // 是否立刻下载
@@ -572,106 +604,85 @@ class PackageManager {
     const directoryPathParent = path.join(tmpDir, `codepuh_${randToken(32)}`)
     const directoryPath = path.join(directoryPathParent, 'current')
     logger.debug(`releasePackage generate an random dir path: ${directoryPath}`)
-    return Promise.all([
-      qetag(filePath, logger),
-      createEmptyFolder(directoryPath).then(() => {
-        return unzipFile(filePath, directoryPath, logger)
-      }),
-    ])
-      .then(([blobHash]) => {
-        return uploadPackageType(directoryPath).then((type) => {
-          return Apps.findByPk(appId).then((appInfo) => {
-            if (type > 0 && appInfo.os > 0 && appInfo.os !== type) {
-              const e = new AppError('it must be publish it by ios type')
-              logger.debug(e)
-              throw e
-            } else {
-              // 不验证
-              logger.debug(`Unknown package type:`, {
-                type,
-                os: appInfo.os,
-              })
-            }
-            return blobHash
-          })
+
+    try {
+      // 并行执行文件哈希计算和解压操作
+      const [blobHash] = await Promise.all([
+        qetag(filePath, logger),
+        createEmptyFolder(directoryPath).then(() => {
+          return unzipFile(filePath, directoryPath, logger)
+        }),
+      ])
+
+      // 获取包类型并验证
+      const type = await uploadPackageType(directoryPath)
+      const appInfo = await Apps.findByPk(appId)
+      if (type > 0 && appInfo.os > 0 && appInfo.os !== type) {
+        const e = new AppError('it must be publish it by ios type')
+        logger.debug(e)
+        throw e
+      } else {
+        // 不验证
+        logger.debug(`Unknown package type:`, {
+          type,
+          os: appInfo.os,
         })
+      }
+
+      // 存储包并获取相关信息
+      const dataCenter = await dataCenterManager.storePackage(
+        directoryPath,
+        false,
+        logger,
+      )
+      const { packageHash } = dataCenter
+      const manifestFile = dataCenter.manifestFilePath
+      let packageId = 0
+
+      // 检查部署版本
+      const deploymentsVersions = await DeploymentsVersions.findOne({
+        where: { deployment_id: deploymentId, app_version: appVersion },
       })
-      .then((blobHash) => {
-        return dataCenterManager
-          .storePackage(directoryPath, false, logger)
-          .then((dataCenter) => {
-            const { packageHash } = dataCenter
-            const manifestFile = dataCenter.manifestFilePath
-            let packageId = 0
-            return DeploymentsVersions.findOne({
-              where: { deployment_id: deploymentId, app_version: appVersion },
-            })
-              .then((deploymentsVersions) => {
-                if (!deploymentsVersions) {
-                  return false
-                }
-                packageId = deploymentsVersions.get('current_package_id')
-                return this.isMatchPackageHash(
-                  deploymentsVersions.get('current_package_id'),
-                  packageHash,
-                  logger,
-                )
-              })
-              .then(async (isExist) => {
-                if (isExist) {
-                  const shouldIgnoreRepeatPackage =
-                    await this.isIgnoreRepeatPackage(
-                      packageId,
-                      channelReleaseId,
-                    )
-                  if (shouldIgnoreRepeatPackage) {
-                    logger.info(
-                      `禁用上一次发布的版本. packageId: ${packageId} channelReleaseId: ${channelReleaseId}`,
-                    )
-                    await Packages.update(
-                      { is_disabled: IS_DISABLED_YES },
-                      {
-                        where: {
-                          id: packageId,
-                        },
-                      },
-                    )
-                  } else {
-                    const e = new AppError(
-                      '当前发布与上次发布相同',
-                      ErrorCode.RELEASE_IDENTICAL,
-                      AccountManager.ERROR_CONFLICT,
-                    )
-                    logger.debug(e.message)
-                    throw e
-                  }
-                }
-                return qetag(manifestFile, logger)
-              })
-              .then((manifestHash) => {
-                return Promise.all([
-                  uploadFileToStorage(manifestHash, manifestFile, logger),
-                  uploadFileToStorage(blobHash, filePath, logger),
-                ]).then(() => [packageHash, manifestHash, blobHash])
-              })
-          })
-      })
-      .then(async ([packageHash, manifestHash, blobHash]) => {
-        const stats = fs.statSync(filePath)
+
+      let isExist = false
+      if (deploymentsVersions) {
+        packageId = deploymentsVersions.get('current_package_id')
+        isExist = await this.isMatchPackageHash(
+          deploymentsVersions.get('current_package_id'),
+          packageHash,
+          logger,
+        )
+      }
+
+      // 处理重复包的情况
+      if (isExist) {
+        // 获取现有包的信息，用于复用数据
+        const existingPackage = await Packages.findByPk(packageId)
+        if (!existingPackage) {
+          throw new AppError('找不到现有包')
+        }
+
+        logger.info(
+          `检测到重复包，复用现有数据创建新包. existingPackageId: ${packageId}`,
+        )
+
+        // 复用现有包的数据（跳过 CDN 上传）
         const params = {
           releaseMethod: RELEASE_METHOD_UPLOAD,
           releaseUid,
           isMandatory: isMandatory ? IS_MANDATORY_YES : IS_MANDATORY_NO,
           isDisabled: isDisabled ? IS_DISABLED_YES : IS_DISABLED_NO,
-          uuid: uuid, // default ''
-          rollout: 100, // rollout 迁移到 releases 表维护，这里默认都是 100
-          size: stats.size,
+          uuid: uuid,
+          rollout: 100,
+          size: existingPackage.size,
           description,
           releaseId: null,
           min_version: versionInfo[1],
           max_version: versionInfo[2],
           appBinaryTime: appBinaryTime,
         }
+
+        // 处理渠道发布ID
         if (channelReleaseId) {
           const [release] = await Releases.findOrCreate({
             where: {
@@ -685,18 +696,83 @@ class PackageManager {
           })
           params.releaseId = release.id
         }
-        logger.info('releasePackage', { params, channelReleaseId })
-        return this.createPackage(
+
+        logger.info('releasePackage (duplicate)', { params, channelReleaseId })
+        // 复用现有包的 hash 和 blob 信息
+        return await this.createPackage(
           deploymentId,
           appVersion,
-          packageHash,
-          manifestHash,
-          blobHash,
+          existingPackage.package_hash,
+          existingPackage.common_hash,
+          existingPackage.manifest_blob_url,
+          existingPackage.blob_url,
           params,
           logger,
         )
-      })
-      .finally(() => deleteFolderSync(directoryPathParent))
+      }
+
+      // 非重复包：正常流程，上传到 CDN
+      // 获取manifest哈希并上传文件
+      const manifestHash = await qetag(manifestFile, logger)
+      await Promise.all([
+        uploadFileToStorage(manifestHash, manifestFile, logger),
+        uploadFileToStorage(blobHash, filePath, logger),
+      ])
+
+      // 准备包参数
+      const stats = fs.statSync(filePath)
+      const params = {
+        releaseMethod: RELEASE_METHOD_UPLOAD,
+        releaseUid,
+        isMandatory: isMandatory ? IS_MANDATORY_YES : IS_MANDATORY_NO,
+        isDisabled: isDisabled ? IS_DISABLED_YES : IS_DISABLED_NO,
+        uuid: uuid, // default ''
+        rollout: 100, // rollout 迁移到 releases 表维护，这里默认都是 100
+        size: stats.size,
+        description,
+        releaseId: null,
+        min_version: versionInfo[1],
+        max_version: versionInfo[2],
+        appBinaryTime: appBinaryTime,
+      }
+
+      // 处理渠道发布ID
+      if (channelReleaseId) {
+        const [release] = await Releases.findOrCreate({
+          where: {
+            channel_release_id: channelReleaseId,
+          },
+          defaults: {
+            rollout,
+            white_list: whiteList,
+            channel_release_id: channelReleaseId,
+          },
+        })
+        params.releaseId = release.id
+      }
+
+      logger.info('releasePackage', { params, channelReleaseId })
+      return await this.createPackage(
+        deploymentId,
+        appVersion,
+        packageHash,
+        commonHash,
+        manifestHash,
+        blobHash,
+        params,
+        logger,
+      )
+    } catch (error) {
+      logger.error('releasePackage error', { error })
+      // 如果是 AppError，直接重新抛出以保留原始错误信息（消息、状态码、错误代码）
+      if (error instanceof AppError) {
+        throw error
+      }
+      // 其他未知错误才包装成通用错误
+      throw new AppError('releasePackage error', ErrorCode.Normal, 500)
+    } finally {
+      deleteFolderSync(directoryPathParent)
+    }
   }
 
   modifyReleasePackage(
@@ -776,6 +852,7 @@ class PackageManager {
   ) {
     const appVersion = _.get(params, 'appVersion', null)
     const label = _.get(params, 'label', null)
+    const commonHash = _.get(params, 'commonHash', null)
     return new Promise((resolve, reject) => {
       if (label) {
         Packages.findOne({
@@ -829,36 +906,41 @@ class PackageManager {
           reject(e)
         })
     })
-      .then(([sourcePack, deploymentsVersions]) => {
-        const appFinalVersion = appVersion || deploymentsVersions.app_version
-        logger.debug('sourcePack', sourcePack)
-        logger.debug('deploymentsVersions', deploymentsVersions)
-        logger.debug('appFinalVersion', appFinalVersion)
-        return DeploymentsVersions.findOne({
-          where: {
-            deployment_id: destDeploymentInfo.id,
-            app_version: appFinalVersion,
-          },
-        })
-          .then((destDeploymentsVersions) => {
-            if (!destDeploymentsVersions) {
-              return false
-            }
-            return this.isMatchPackageHash(
-              destDeploymentsVersions.get('current_package_id'),
-              sourcePack.package_hash,
-              logger,
-            )
+      .then(
+        ([sourcePack, deploymentsVersions]: [
+          PackagesInterface,
+          DeploymentsVersionsInterface,
+        ]) => {
+          const appFinalVersion = appVersion || deploymentsVersions.app_version
+          logger.debug('sourcePack', sourcePack)
+          logger.debug('deploymentsVersions', deploymentsVersions)
+          logger.debug('appFinalVersion', appFinalVersion)
+          return DeploymentsVersions.findOne({
+            where: {
+              deployment_id: destDeploymentInfo.id,
+              app_version: appFinalVersion,
+            },
           })
-          .then((isExist) => {
-            if (isExist) {
-              throw new AppError(
-                "The uploaded package is identical to the contents of the specified deployment's current release.",
+            .then((destDeploymentsVersions) => {
+              if (!destDeploymentsVersions) {
+                return false
+              }
+              return this.isMatchPackageHash(
+                destDeploymentsVersions.get('current_package_id'),
+                sourcePack.package_hash,
+                logger,
               )
-            }
-            return [sourcePack, appFinalVersion]
-          })
-      })
+            })
+            .then((isExist) => {
+              if (isExist) {
+                throw new AppError(
+                  "The uploaded package is identical to the contents of the specified deployment's current release.",
+                )
+              }
+              return [sourcePack, appFinalVersion]
+            })
+        },
+      )
       .then(([sourcePack, appFinalVersion]) => {
         const versionInfo = validatorVersion(appFinalVersion)
         if (!versionInfo[0]) {
@@ -897,6 +979,7 @@ class PackageManager {
           destDeploymentInfo.id,
           appFinalVersion,
           sourcePack.package_hash,
+          commonHash,
           sourcePack.manifest_blob_url,
           sourcePack.blob_url,
           createParams,
@@ -944,19 +1027,13 @@ class PackageManager {
           )
           .then(([currentPackageInfo, rollbackPackageInfos]) => {
             if (currentPackageInfo && rollbackPackageInfos.length > 0) {
-              for (let i = rollbackPackageInfos.length - 1; i >= 0; i -= 1) {
-                if (
-                  rollbackPackageInfos[i].package_hash !==
-                  currentPackageInfo.package_hash
-                ) {
-                  // 找到了可以回滚的版本，禁用中间版本
-                  return this.disabledPackage(
-                    currentPackageInfo,
-                    rollbackPackageInfos[i],
-                    t,
-                  ).then(() => rollbackPackageInfos[i])
-                }
-              }
+              const rollbackPackage = rollbackPackageInfos[0]
+              // 禁用中间版本
+              return this.disabledPackage(
+                currentPackageInfo,
+                rollbackPackage,
+                t,
+              ).then(() => rollbackPackage)
             }
             throw new AppError('没有可供回滚的版本 ' + currentPackageInfo.id)
           })
@@ -979,6 +1056,7 @@ class PackageManager {
               deploymentsVersions.deployment_id,
               deploymentsVersions.app_version,
               rollbackPackage.package_hash,
+              rollbackPackage.common_hash,
               rollbackPackage.manifest_blob_url,
               rollbackPackage.blob_url,
               params,
@@ -1199,6 +1277,48 @@ class PackageManager {
     })
   }
 
+  /**
+   * 使用 wget 下载并解压文件到目标目录
+   * @param downloadURL 下载 URL
+   * @param targetPath 目标解压目录
+   * @param blobUrl blob URL（用于生成临时文件名）
+   * @param logger 日志记录器
+   */
+  private async downloadAndExtractPackage(
+    downloadURL: string,
+    targetPath: string,
+    blobUrl: string,
+    logger: Logger,
+  ): Promise<void> {
+    const execPromise = util.promisify(exec)
+    const tempZipPath = path.join(path.dirname(targetPath), `${blobUrl}.zip`)
+
+    // 确保目标目录存在
+    await fspromise.mkdir(path.dirname(tempZipPath), { recursive: true })
+
+    try {
+      // 使用 wget 下载文件（添加超时和重试参数以提高可靠性）
+      logger.info(`Using wget to download: ${downloadURL} to ${tempZipPath}`)
+      await execPromise(
+        `wget --timeout=60 --tries=3 --quiet "${downloadURL}" -O "${tempZipPath}"`,
+      )
+
+      // 解压文件
+      await fspromise.mkdir(targetPath, { recursive: true })
+      await unzipFile(tempZipPath, targetPath, logger)
+
+      // 清理临时文件
+      await fspromise.rm(tempZipPath)
+    } catch (error) {
+      // 如果 wget 失败，清理临时文件
+      if (await isFileExit(tempZipPath)) {
+        await fspromise.rm(tempZipPath)
+      }
+      logger.error(`wget download failed: ${error.message}`)
+      throw new AppError(`下载失败: ${error.message}`)
+    }
+  }
+
   async createDiffPackage(
     appid: number,
     deploymentId: number,
@@ -1252,11 +1372,50 @@ class PackageManager {
 
       if (!(await isFileExit(targetPath))) {
         // 内置包没有缓存到本地，需要通过 PackageV0 下载然后缓存
-        const downloadURL = getInnerBlobDownloadUrl(packageV0.blob_url)
-        logger.info(`downloadURL: ${downloadURL}. targetPath: ${targetPath}`)
-        await download(downloadURL, targetPath, {
-          extract: true,
-        })
+        logger.info('没有命中缓存, 从oss下载')
+        const { storageType } = config.common
+        let shouldDownload = true
+
+        // 如果是本地存储，先检查本地存储目录是否有文件
+        if (storageType === 'local') {
+          const { storageDir } = config.local
+          const subDir = packageV0.blob_url.substring(0, 2).toLowerCase()
+          const localFilePath = path.join(
+            storageDir,
+            subDir,
+            packageV0.blob_url,
+          )
+
+          if (await isFileExit(localFilePath)) {
+            logger.info(
+              `Found package in local storage: ${localFilePath}. Copying to targetPath: ${targetPath}`,
+            )
+            // 创建目标目录
+            await fspromise.mkdir(targetPath, { recursive: true })
+            // 复制并解压文件
+            const tempZipPath = path.join(
+              path.dirname(targetPath),
+              `${packageV0.blob_url}.zip`,
+            )
+            await fspromise.copyFile(localFilePath, tempZipPath)
+            await unzipFile(tempZipPath, targetPath, logger)
+            await fspromise.rm(tempZipPath)
+            shouldDownload = false
+          }
+        }
+
+        // 如果本地没有找到文件，则通过 HTTP 下载
+        if (shouldDownload) {
+          const downloadURL = getInnerBlobDownloadUrl(packageV0.blob_url)
+          logger.info(`downloadURL: ${downloadURL}. targetPath: ${targetPath}`)
+          await this.downloadAndExtractPackage(
+            downloadURL,
+            targetPath,
+            packageV0.blob_url,
+            logger,
+          )
+        }
+
         // 去除 cli 发布的文件夹名称影响
         // $LOCAL_DOWNLOAD_URL/Kp7eMvcm54SFcABytmgUS7DC7Xek4ksvOXqog/3.4.4/base/index.xt-app-main.bundle ⬇️（移除base文件夹）
         // $LOCAL_DOWNLOAD_URL/Kp7eMvcm54SFcABytmgUS7DC7Xek4ksvOXqog/3.4.4/index.xt-app-main.bundle
@@ -1285,10 +1444,9 @@ class PackageManager {
       // 根据内容生成 hash
       const blobHash = await qetag(tmpDiff, logger)
       const stats = fs.statSync(tmpDiff)
-
       // 上传文件到云端
       await uploadFileToStorage(blobHash, tmpDiff, logger)
-      await PackagesDiff.create(
+      const packageDiff = await PackagesDiff.create(
         {
           package_id: packages.id,
           diff_against_package_hash: packageV0.package_hash,
@@ -1299,7 +1457,7 @@ class PackageManager {
       )
       t.commit()
       logger.info('CreateDiffPackage success')
-      return diffResult
+      return packageDiff
     } catch (e) {
       await t.rollback()
       logger.error(e)
@@ -1308,6 +1466,183 @@ class PackageManager {
       // clean
       deleteFolderSync(tmpDir)
       deleteFolderSync(tmpDiffDir)
+    }
+  }
+
+  // 基于当前包生成最近 num 个历史包的 diff
+  async createDiffPackagesByLastNumsV2(
+    appid: number,
+    deploymentId: number,
+    packageInfo: PackageInfo,
+    packages: PackagesInterface,
+    filepath: string,
+    logger: Logger,
+    num = 3,
+  ) {
+    const tmpUploadPath = path.resolve(
+      os.tmpdir(),
+      `codepush_upload_${randToken(32)}.zip`,
+    )
+    let effectiveFilepath = filepath
+    try {
+      fs.accessSync(filepath, fs.constants.R_OK)
+      fs.copyFileSync(filepath, tmpUploadPath)
+      effectiveFilepath = tmpUploadPath
+    } catch (err) {
+      logger.error(`copy upload file failed: ${filepath}`)
+      return []
+    }
+
+    try {
+      const { appVersion } = packageInfo
+      const deployment = await Deployments.findByPk(deploymentId)
+      const deploymentVersion = await DeploymentsVersions.findOne({
+        where: {
+          deployment_id: deploymentId,
+          app_version: appVersion,
+        },
+      })
+      if (!deployment || !deploymentVersion) {
+        throw new AppError('deployment or deploymentVersion not found')
+      }
+
+      const basePackages = await Packages.findAll({
+        where: {
+          deployment_version_id: deploymentVersion.id,
+          id: { [Op.lt]: packages.id },
+          is_disabled: IS_DISABLED_NO,
+          release_method: {
+            [Op.in]: [RELEASE_METHOD_UPLOAD, RELEASE_METHOD_PROMOTE],
+          },
+        },
+        order: [['id', 'desc']],
+        limit: num,
+      })
+
+      if (_.isEmpty(basePackages)) {
+        return []
+      }
+
+      const results: PackagesDiffInterface[] = []
+      for (const basePackage of basePackages) {
+        const exist = await PackagesDiff.findOne({
+          where: {
+            package_id: packages.id,
+            diff_against_package_hash: basePackage.package_hash,
+          },
+        })
+        if (!_.isEmpty(exist)) {
+          logger.info(`diff package already exists: ${exist.id}`)
+          continue
+        }
+
+        const t = await sequelize.transaction()
+        const tmpDir = path.resolve(
+          os.tmpdir(),
+          `codepush_cache_${randToken(32)}`,
+        )
+        const tmpDiffDir = path.resolve(
+          os.tmpdir(),
+          `codepush_diff_${randToken(32)}`,
+        )
+        try {
+          const targetPath = path.resolve(
+            process.cwd(),
+            config.common.localCodePushDir,
+            deployment.deployment_key,
+            appVersion,
+            basePackage.package_hash,
+          )
+
+          if (!(await isFileExit(targetPath))) {
+            logger.info('没有命中缓存, 从oss下载')
+            const { storageType } = config.common
+            let shouldDownload = true
+
+            if (storageType === 'local') {
+              const { storageDir } = config.local
+              const subDir = basePackage.blob_url.substring(0, 2).toLowerCase()
+              const localFilePath = path.join(
+                storageDir,
+                subDir,
+                basePackage.blob_url,
+              )
+
+              if (await isFileExit(localFilePath)) {
+                logger.info(
+                  `Found package in local storage: ${localFilePath}. Copying to targetPath: ${targetPath}`,
+                )
+                await fspromise.mkdir(targetPath, { recursive: true })
+                const tempZipPath = path.join(
+                  path.dirname(targetPath),
+                  `${basePackage.blob_url}.zip`,
+                )
+                await fspromise.copyFile(localFilePath, tempZipPath)
+                await unzipFile(tempZipPath, targetPath, logger)
+                await fspromise.rm(tempZipPath)
+                shouldDownload = false
+              }
+            }
+
+            if (shouldDownload) {
+              const downloadURL = getInnerBlobDownloadUrl(basePackage.blob_url)
+              logger.info(
+                `downloadURL: ${downloadURL}. targetPath: ${targetPath}`,
+              )
+              await this.downloadAndExtractPackage(
+                downloadURL,
+                targetPath,
+                basePackage.blob_url,
+                logger,
+              )
+            }
+
+            await removeParentFolder(targetPath, logger)
+            const codepushrelease = path.join(targetPath, '.codepushrelease')
+            if (await isFileExit(codepushrelease)) {
+              logger.info('remove .codepushrelease. ' + codepushrelease)
+              await fspromise.rm(codepushrelease)
+            }
+          }
+
+          const tmpDiff = path.resolve(tmpDiffDir, DIFF_FILE_NAME)
+          await unzipFile(effectiveFilepath, tmpDir, logger)
+          await createEmptyFolder(tmpDiffDir)
+
+          logger.info(
+            `CreateDiffPackageByLastNumsV2 targetPath:${targetPath}. tmpDir:${tmpDir}`,
+          )
+          const diffResult = await diff(targetPath, tmpDir, tmpDiff)
+          logger.info(`Diff result ${JSON.stringify(diffResult)}`)
+
+          const blobHash = await qetag(tmpDiff, logger)
+          const stats = fs.statSync(tmpDiff)
+          await uploadFileToStorage(blobHash, tmpDiff, logger)
+          const packageDiff = await PackagesDiff.create(
+            {
+              package_id: packages.id,
+              diff_against_package_hash: basePackage.package_hash,
+              diff_blob_url: blobHash,
+              diff_size: stats.size,
+            },
+            { transaction: t },
+          )
+          await t.commit()
+          results.push(packageDiff)
+        } catch (e) {
+          await t.rollback()
+          logger.error(e)
+        } finally {
+          deleteFolderSync(tmpDir)
+          deleteFolderSync(tmpDiffDir)
+        }
+      }
+
+      return results
+    } finally {
+      if (effectiveFilepath !== filepath) {
+        deleteFolderSync(effectiveFilepath)
+      }
     }
   }
 

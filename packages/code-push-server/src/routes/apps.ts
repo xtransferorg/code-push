@@ -2,7 +2,7 @@
 import express from 'express'
 import _, { isEmpty } from 'lodash'
 import validator from 'validator'
-import { AppError } from '../core/app-error'
+import { AppError, ErrorCode } from '../core/app-error'
 import { config } from '../core/config'
 import {
   IOS,
@@ -17,6 +17,7 @@ import {
   CORDOVA_NAME,
   HARMONY_NAME,
   HARMONY,
+  DELIVERY_TYPE_DYNAMIC,
 } from '../core/const'
 import { checkToken, Req } from '../core/middleware'
 import { accountManager } from '../core/services/account-manager'
@@ -28,8 +29,7 @@ import { packageManager } from '../core/services/package-manager'
 import { delay, deleteFolderSync } from '../core/utils/common'
 import { rollback } from '../core/rollback'
 import { sequelize } from '../core/utils/connections'
-import type { PackageInfo } from '@xrnjs/code-push-core/script/rest-definitions'
-import { AddAppConfig } from '@xrnjs/code-push-core/dist/types'
+import { PackageInfo, AddAppConfig, SystemType } from '@xrnjs/code-push-core'
 
 export const appsRouter = express.Router()
 
@@ -118,6 +118,7 @@ appsRouter.post(
           targetUuids,
           previous,
         )
+
         if (data.length !== targetUuids.length) {
           throw new AppError(
             '在查找 targetUuid 时有缺失的包' + JSON.stringify(data),
@@ -607,7 +608,7 @@ appsRouter.post(
   '/:appName/deployments/:deploymentName/release',
   checkToken,
   // eslint-disable-next-line max-lines-per-function
-  (req: Req<{ appName: string; deploymentName: string }>, res, next) => {
+  async (req: Req<{ appName: string; deploymentName: string }>, res, next) => {
     const { logger, params } = req
     const appName = _.trim(params.appName)
     const deploymentName = _.trim(params.deploymentName)
@@ -617,111 +618,125 @@ appsRouter.post(
       appName,
       deploymentName,
     })
-    accountManager
-      .collaboratorCan(uid, appName, logger)
-      .then((col) => {
-        logger.info('release user check ok', {
-          uid,
-          appName,
-          deploymentName,
-        })
 
-        return deploymentsManager
-          .findDeploymentByName(deploymentName, col.appid, logger)
-          .then((deploymentInfo) => {
-            if (_.isEmpty(deploymentInfo)) {
-              throw new AppError('does not find the deployment')
-            }
-            logger.info('release deployment check ok', {
-              uid,
-              appName,
-              deploymentName,
-            })
-
-            return packageManager
-              .parseReqFile(req, logger)
-              .then((data) => {
-                if (data.package.mimetype !== 'application/zip') {
-                  throw new AppError(
-                    `upload file type is invalidate: ${data.package.mimetype}`,
-                  )
-                }
-                logger.info('release packagee parse ok', {
-                  uid,
-                  appName,
-                  deploymentName,
-                })
-
-                return packageManager
-                  .releasePackage(
-                    deploymentInfo.appid,
-                    deploymentInfo.id,
-                    data.packageInfo,
-                    data.package.filepath,
-                    uid,
-                    logger,
-                  )
-                  .then(async (packages) => {
-                    if (!data.packageInfo.appBinaryTime) {
-                      await packageManager
-                        .createDiffPackage(
-                          deploymentInfo.appid,
-                          deploymentInfo.id,
-                          data.packageInfo,
-                          packages,
-                          data.package.filepath,
-                          logger,
-                        )
-                        .catch((e) => {
-                          logger.error(e)
-                        })
-                        .finally(() => {
-                          deleteFolderSync(data.package.filepath)
-                        })
-                    }
-                    return packages
-                  })
-              })
-              .then((packages) => {
-                // clear cache if exists.
-                if (config.common.updateCheckCache) {
-                  delay(2500).then(() => {
-                    clientManager.clearUpdateCheckCache(
-                      deploymentInfo.deployment_key,
-                      '*',
-                      '*',
-                      '*',
-                      logger,
-                    )
-                  })
-                }
-                return packages
-              })
-          })
+    try {
+      const col = await accountManager.collaboratorCan(uid, appName, logger)
+      logger.info('release user check ok', {
+        uid,
+        appName,
+        deploymentName,
       })
-      .then((packages) => {
-        logger.info('release success', {
-          uid,
-          appName,
-          deploymentName,
-        })
 
-        res.send({ msg: 'succeed', package: packages })
+      const deploymentInfo = await deploymentsManager.findDeploymentByName(
+        deploymentName,
+        col.appid,
+        logger,
+      )
+      if (_.isEmpty(deploymentInfo)) {
+        throw new AppError('does not find the deployment')
+      }
+      logger.info('release deployment check ok', {
+        uid,
+        appName,
+        deploymentName,
       })
-      .catch((e) => {
-        if (e instanceof AppError) {
-          logger.info('release failed', {
+
+      const data = await packageManager.parseReqFile(req, logger)
+      if (data.package.mimetype !== 'application/zip') {
+        throw new AppError(
+          `upload file type is invalidate: ${data.package.mimetype}`,
+        )
+      }
+      logger.info('release packagee parse ok', {
+        uid,
+        appName,
+        deploymentName,
+      })
+
+      const packages = await packageManager.releasePackage(
+        deploymentInfo.appid,
+        deploymentInfo.id,
+        data.packageInfo,
+        data.package.filepath,
+        uid,
+        logger,
+      )
+
+      let diff = null
+      if (!data.packageInfo.appBinaryTime) {
+        // 异步创建 diff 包
+        try {
+          const packageDiff = await packageManager.createDiffPackage(
+            deploymentInfo.appid,
+            deploymentInfo.id,
+            data.packageInfo,
+            packages,
+            data.package.filepath,
+            logger,
+          )
+          diff = packageDiff.toJSON()
+
+          // 创建最近12个diff包
+          packageManager.createDiffPackagesByLastNumsV2(
+            deploymentInfo.appid,
+            deploymentInfo.id,
+            data.packageInfo,
+            packages,
+            data.package.filepath,
+            logger,
+            12,
+          )
+        } catch (error) {
+          logger.error('create diff package failed', {
             uid,
             appName,
             deploymentName,
-            error: e.message,
+            error: error instanceof Error ? error.message : String(error),
           })
-
-          res.status(e.status !== 200 ? e.status : 406).send(e.message)
-        } else {
-          next(e)
+          throw error
+        } finally {
+          deleteFolderSync(data.package.filepath)
+          logger.info('创建diff包完成: ' + Date.now())
         }
+      }
+
+      // clear cache if exists.
+      if (config.common.updateCheckCache) {
+        delay(2500).then(() => {
+          clientManager.clearUpdateCheckCache(
+            deploymentInfo.deployment_key,
+            '*',
+            '*',
+            '*',
+            logger,
+          )
+        })
+      }
+
+      logger.info('release success', {
+        uid,
+        appName,
+        deploymentName,
       })
+
+      res.send({
+        msg: 'succeed',
+        package: { ...packages.toJSON(), packageDiff: diff },
+      })
+    } catch (e) {
+      if (e instanceof AppError) {
+        logger.info('release failed', {
+          uid,
+          appName,
+          deploymentName,
+          error: e.message,
+        })
+
+        res.status(e.status !== 200 ? e.status : 406).send(e.message)
+      } else {
+        next(e)
+      }
+    }
   },
 )
 
@@ -1453,7 +1468,7 @@ appsRouter.post(
     })
 
     appManager
-      .findAppByName(uid, appName)
+      .findAppByName(uid, appName, req.body?.buildType)
       .then((appInfo) => {
         if (!_.isEmpty(appInfo)) {
           throw new AppError(`${appName} Exist!`)
@@ -1539,6 +1554,174 @@ appsRouter.patch(
       } else {
         next(e)
       }
+    }
+  },
+)
+
+/**
+ * 查询指定版本上所有发布过热更新的bundle
+ */
+appsRouter.post(
+  '/getBundleList',
+  async (
+    req: Req<void, { platform: string; env: string; buildType: string }>,
+    res,
+    next,
+  ) => {
+    const { logger, body } = req
+    const { platform, env = '', buildType } = body
+    logger.info('try get all bundles', {
+      platform,
+      env,
+      buildType,
+    })
+
+    try {
+      const result = await appManager.getAppListByVersion(
+        platform as SystemType,
+        env,
+        buildType,
+        logger,
+      )
+
+      return res.json({
+        code: 0,
+        message: 'success',
+        data: result,
+      })
+    } catch (error) {
+      return next(new AppError(error, ErrorCode.QUERY_ERROR, 500))
+    }
+  },
+)
+
+appsRouter.post(
+  '/getBundleInfo',
+  async (
+    req: Req<
+      void,
+      {
+        bundleName: string
+        platform: string
+        env: string
+        buildType: string
+      }
+    >,
+    res,
+    next,
+  ) => {
+    const { logger, body } = req
+    const { bundleName, platform, env, buildType } = body
+
+    logger.info('getBundleInfo', { bundleName, platform, env, buildType })
+
+    try {
+      const bundles = await appManager.getAppListByVersion(
+        platform as SystemType,
+        env,
+        buildType,
+        logger,
+      )
+
+      const bundle = bundles.find((bundle) => bundle.bundleName === bundleName)
+
+      if (bundle) {
+        const response = {
+          code: 0,
+          message: 'success',
+          data: {
+            bundleName: bundle.bundleName,
+            codePushName: bundle.codePushName,
+            deploymentKey: bundle?.deploymentKey || null,
+            deliveryType: bundle?.deliveryType,
+          },
+        }
+        res.json(response)
+      } else {
+        return res.json({
+          code: 0,
+          message: 'success',
+          data: null,
+        })
+      }
+    } catch (error) {
+      return next(new AppError(error, ErrorCode.QUERY_ERROR, 500))
+    }
+  },
+)
+
+appsRouter.get(
+  '/getDynamicBundles',
+  async (
+    req: Req<void, { platform: string; env: string; buildType: string }>,
+    res,
+    next,
+  ) => {
+    const { logger, body } = req
+    const {
+      platform = SystemType.IOS,
+      env = 'prod',
+      buildType = 'release',
+    } = body
+    logger.info('getDynamicBundleList', { platform, env, buildType })
+    try {
+      const result = await appManager.getAppListByVersion(
+        platform as SystemType,
+        env,
+        buildType,
+        logger,
+      )
+
+      const dynamicBundles = Array.from(
+        new Set(
+          result
+            .filter((bundle) => bundle.deliveryType === DELIVERY_TYPE_DYNAMIC)
+            .map((bundle) => bundle.bundleName),
+        ),
+      )
+
+      res.json({
+        code: 0,
+        message: 'success',
+        data: dynamicBundles.map((app) => ({ app })),
+      })
+    } catch (error) {
+      return next(new AppError(error, ErrorCode.QUERY_ERROR, 500))
+    }
+  },
+)
+
+appsRouter.post(
+  '/check_first_codepush',
+  async (
+    req: Req<
+      void,
+      { bundleName: string; appVersion: string; buildType?: string }
+    >,
+    res,
+    next,
+  ) => {
+    const { logger, body } = req
+    const { bundleName, appVersion, buildType = 'release' } = body
+
+    if (!bundleName || !appVersion) {
+      throw new AppError('bundleName and appVersion are required')
+    }
+
+    try {
+      const result = await appManager.queryFirstCodepushByBundleName(
+        bundleName,
+        appVersion,
+        buildType,
+        logger,
+      )
+      res.json({
+        code: 0,
+        message: 'success',
+        data: !Boolean(result),
+      })
+    } catch (error) {
+      return next(new AppError(error, ErrorCode.QUERY_ERROR, 500))
     }
   },
 )

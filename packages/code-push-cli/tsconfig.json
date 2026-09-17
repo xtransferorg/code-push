@@ -8,6 +8,7 @@
     "outDir": "bin",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "declaration": true
   }
 }

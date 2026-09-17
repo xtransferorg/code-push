@@ -1,7 +1,21 @@
+import { BundlePlatformMapType } from '@xrnjs/code-push-core'
+
 export enum SystemTypeEnum {
   iOS = 'iOS',
   Android = 'Android',
   Harmony = 'harmony',
+}
+
+export enum LegacySystemTypeEnum {
+  iOS = 'ios',
+  Android = 'android',
+  Harmony = 'harmony',
+}
+
+export const LEGACY_SYSTEM_TYPE_MAP = {
+  [LegacySystemTypeEnum.iOS]: SystemTypeEnum.iOS,
+  [LegacySystemTypeEnum.Android]: SystemTypeEnum.Android,
+  [LegacySystemTypeEnum.Harmony]: SystemTypeEnum.Harmony,
 }
 
 export enum AppTypeEnum {
@@ -14,6 +28,12 @@ export interface SystemConfig {
   nativeProjectName: string
   nativeProjectId: number
   enabled: boolean
+}
+
+export const SYSTEM_TYPE_MAP = {
+  [BundlePlatformMapType.IOS]: SystemTypeEnum.iOS,
+  [BundlePlatformMapType.ANDROID]: SystemTypeEnum.Android,
+  [BundlePlatformMapType.HARMONY]: SystemTypeEnum.Harmony,
 }
 
 export const SYSTEM_CONFIG_MAP: Record<
@@ -80,7 +100,10 @@ export const getAppSysCode = (
   return getSystemConfig(appType, system).appSysCode
 }
 
-export function getBundleTag(appType: AppTypeEnum, bundle) {
+export function getBundleTag(
+  appType: AppTypeEnum = AppTypeEnum.Xtransfer,
+  bundle,
+) {
   const { bundleName, version, system, label } = bundle
   const name = bundleName.split('-').pop()
   const sysCode = getAppSysCode(appType, system as SystemTypeEnum)

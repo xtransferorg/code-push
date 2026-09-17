@@ -20,15 +20,39 @@ import {
   PRODUCTION,
   HARMONY,
   HARMONY_NAME,
+  IS_DISABLED_NO,
 } from '../const'
 import { sequelize } from '../utils/connections'
 import { randToken } from '../utils/security'
-import type { AddAppConfig } from '@xrnjs/code-push-core/dist/types'
+import type { AddAppConfig, SystemType } from '@xrnjs/code-push-core'
 import { NativeApps } from '../../models/native_apps'
+import { getBundleOsType } from '../utils/common'
+import { DeploymentsVersions } from '../../models/deployments_versions'
+import { Packages, PackagesInterface } from '../../models/packages'
+
+/**
+ * 处理 bundle 名称，删除操作系统标识符及其之后的内容
+ * @param bundleName 原始 bundle 名称
+ * @returns 处理后的 bundle 名称
+ */
+export function processBundleName(bundleName: string): string {
+  const osIdentifiers = ['android', 'ios', 'harmony']
+
+  for (const os of osIdentifiers) {
+    const index = bundleName.toLowerCase().indexOf(`-${os}`)
+    if (index !== -1) {
+      return bundleName.substring(0, index)
+    }
+  }
+
+  return bundleName
+}
 
 class AppManager {
-  findAppByName(uid: number, appName: string) {
-    return Apps.findOne({ where: { name: appName, uid } })
+  findAppByName(uid: number, appName: string, buildType: string = 'release') {
+    return Apps.findOne({
+      where: { name: appName, uid, build_type: buildType },
+    })
   }
 
   addApp(
@@ -37,7 +61,7 @@ class AppManager {
     os,
     platform,
     identical: string,
-    { repositoryUrl, appKey, port }: AddAppConfig = {},
+    { repositoryUrl, appKey, port, deliveryType, buildType }: AddAppConfig = {},
   ) {
     return sequelize.transaction((t) => {
       return Apps.create(
@@ -49,6 +73,8 @@ class AppManager {
           repository_url: repositoryUrl,
           native_app_key: appKey,
           port: port,
+          delivery_type: deliveryType,
+          build_type: buildType,
         },
         {
           transaction: t,
@@ -233,6 +259,148 @@ class AppManager {
         id: appInfo.get('id'),
       }
     })
+  }
+
+  public async getAppListByVersion(
+    platform: SystemType,
+    env: string, // sitxt18
+    buildType: string,
+    logger,
+  ) {
+    const bundlePlatform = getBundleOsType(platform)
+    const where = {
+      os: bundlePlatform,
+      delivery_type: {
+        [Op.in]: ['DYNAMIC', 'INNER'],
+      },
+      build_type: buildType,
+    }
+
+    // 测试环境有env
+    if (env && !env.includes('prod')) {
+      Object.assign(where, { name: { [Op.like]: `%${env}` } })
+    }
+
+    const apps = await Apps.findAll({ where })
+    // 查 deployment 获取 deployment_key
+    const deployments = await Deployments.findAll({
+      where: {
+        appid: { [Op.in]: apps.map((app) => app.id) },
+        name: PRODUCTION,
+      },
+    })
+    const deploymentsMap = new Map(
+      deployments.map((deployment) => [deployment.appid, deployment]),
+    )
+    const result = apps.map((app) => {
+      const deployment = deploymentsMap.get(app.id)
+      if (!deployment) {
+        return null
+      }
+      const processedBundleName = processBundleName(app.name)
+      return {
+        bundleName: processedBundleName,
+        codePushName: app.name,
+        deploymentKey: deployment.deployment_key,
+        deliveryType: app.delivery_type,
+      }
+    })
+    return result.filter(Boolean)
+  }
+
+  /**
+   * 根据deploymenyKey查找这个bundle是否发布了第一次热更新
+   * @param deploymentKey
+   * @param appVersion
+   */
+  public async queryFirstCodepush(
+    deploymentKey: string,
+    appVersion: string,
+  ): Promise<({ deliveryType: string } & PackagesInterface) | null> {
+    const deployment = await Deployments.findOne({
+      where: { deployment_key: deploymentKey },
+    })
+
+    if (!deployment) {
+      return null
+    }
+
+    const app = await Apps.findOne({
+      where: { id: deployment.appid },
+    })
+
+    if (!app) {
+      return null
+    }
+
+    const deploymentId = deployment.id
+
+    const deploymentVersion = await DeploymentsVersions.findOne({
+      where: {
+        deployment_id: deploymentId,
+        app_version: appVersion,
+      },
+    })
+
+    if (!deploymentVersion) {
+      return null
+    }
+
+    const deploymentVersionId = deploymentVersion.id
+
+    const _package = await Packages.findOne({
+      where: {
+        deployment_version_id: deploymentVersionId,
+        deployment_id: deploymentId,
+        is_disabled: IS_DISABLED_NO,
+      },
+      order: [['created_at', 'ASC']],
+    })
+
+    if (!_package) {
+      return null
+    }
+
+    return { ..._package.toJSON(), deliveryType: app.delivery_type } as {
+      deliveryType: string
+    } & PackagesInterface
+  }
+
+  /**
+   * 根据bundleName查找这个bundle是否发布了第一次热更新
+   * @param bundleName
+   * @param appVersion
+   */
+  public async queryFirstCodepushByBundleName(
+    bundleName: string,
+    appVersion: string,
+    buildType: string = 'release',
+    logger,
+  ) {
+    logger.info('queryFirstCodepushByBundleName', { bundleName, appVersion })
+    // 根据bundleName查找app
+    const app = await Apps.findOne({
+      where: { name: bundleName, build_type: buildType },
+    })
+
+    if (!app) {
+      return null
+    }
+
+    // 根据appid查找deployment（默认查找Production环境的）
+    const deployment = await Deployments.findOne({
+      where: {
+        appid: app.id,
+        name: PRODUCTION,
+      },
+    })
+
+    if (!deployment) {
+      return null
+    }
+
+    // 复用相同的查询逻辑
+    return this.queryFirstCodepush(deployment.deployment_key, appVersion)
   }
 }
 

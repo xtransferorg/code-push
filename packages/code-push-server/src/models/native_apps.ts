@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize'
 import { sequelize } from '../core/utils/connections'
-import type { Platform } from '@xrnjs/code-push-core/dist/types'
+import type { Platform } from '@xrnjs/code-push-core'
 
 export interface NativeAppsInterface extends Model {
   id: bigint
@@ -10,7 +10,6 @@ export interface NativeAppsInterface extends Model {
   app_key: string
   icon_url?: string
   min_version?: string
-  app_type?: string
   package_name?: string
 }
 

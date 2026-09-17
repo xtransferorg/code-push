@@ -18,6 +18,7 @@ export interface PackagesInterface extends Model {
   is_mandatory: number
   is_disabled: number
   app_binary_time: string
+  common_hash: string
   // rollout: number // 已经迁移至 releases 表，后续修改通过 release_id 查找到 release 后进行修改
   uuid: string
   release_id: number
@@ -49,6 +50,7 @@ export const Packages = sequelize.define<PackagesInterface>(
     is_mandatory: DataTypes.INTEGER({ length: 3 }),
     is_disabled: DataTypes.INTEGER({ length: 3 }),
     rollout: DataTypes.INTEGER({ length: 3 }),
+    common_hash: DataTypes.STRING,
     uuid: DataTypes.STRING,
     app_binary_time: DataTypes.STRING,
     release_id: DataTypes.NUMBER,

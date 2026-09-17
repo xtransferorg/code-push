@@ -48,6 +48,7 @@ export interface Package {
   packageSize: number
   originalLabel: string
   patchFailed?: boolean
+  commonHash?: string
 }
 
 export interface RemotePackage extends Package {
@@ -55,6 +56,11 @@ export interface RemotePackage extends Package {
   downloadDiffUrl?: string
   downloadDiffSize?: number
   isDiffAvailable?: boolean
+  currentPackageDiff?: {
+    downloadDiffUrl: string,
+    downloadDiffSize: number,
+    isDiffAvailable: boolean
+  }
 }
 
 export interface NativeUpdateNotification {
@@ -121,6 +127,7 @@ export class AcquisitionManager {
       label: currentPackage.label,
       clientUniqueId: this._clientUniqueId,
       basePackageHash: currentPackage.basePackageHash,
+      commonHash: currentPackage.commonHash,
     }
 
     var requestUrl: string =
@@ -180,6 +187,7 @@ export class AcquisitionManager {
           downloadDiffUrl: updateInfo.downloadDiffUrl,
           downloadDiffSize: updateInfo.downloadDiffSize,
           isDiffAvailable: updateInfo.isDiffAvailable,
+          currentPackageDiff: updateInfo.currentPackageDiff,
         }
 
         callback(/*error=*/ null, remotePackage)

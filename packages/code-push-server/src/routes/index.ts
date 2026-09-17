@@ -1,5 +1,5 @@
 import express from 'express'
-import { AppError } from '../core/app-error'
+import { AppError, ErrorCode } from '../core/app-error'
 import { i18n } from '../core/i18n'
 import { checkToken, Req } from '../core/middleware'
 import { clientManager } from '../core/services/client-manager'
@@ -28,6 +28,7 @@ indexRouter.get(
         packageHash: string
         clientUniqueId: string
         basePackageHash: string
+        commonHash?: string
       }
     >,
     res,
@@ -40,52 +41,25 @@ indexRouter.get(
     const {
       deploymentKey,
       appVersion,
-      label,
+      label = '',
       packageHash,
       clientUniqueId,
       basePackageHash: builtInPackageHash,
+      commonHash,
     } = query
 
     try {
-      let rs = await clientManager.updateCheckFromCache(
-        deploymentKey,
-        appVersion,
+      const rs = await clientManager.updateCheckForClient({
+        deploymentKey: deploymentKey!,
+        appVersion: appVersion!,
         label,
-        packageHash,
+        packageHash: packageHash!,
+        clientUniqueId: clientUniqueId!,
+        builtInPackageHash: builtInPackageHash!,
+        commonHash,
         logger,
-        false, // 不使用前一个稳定版本的包进行下发
-        builtInPackageHash,
-      )
-      const isChosenCurrentPackage = await clientManager.chosenMan(
-        rs.packageId,
-        rs.rollout,
-        rs.whiteList,
-        rs.channelReleaseId,
-        clientUniqueId,
-      )
-      if (!isChosenCurrentPackage) {
-        logger.info('没有命中灰度规则，开始查找上一个稳定的包', query)
-        rs = await clientManager.updateCheckFromCache(
-          deploymentKey,
-          appVersion,
-          label,
-          packageHash,
-          logger,
-          true, // 使用前一个稳定版本的包进行下发
-          builtInPackageHash,
-        )
-        if (rs.rollout !== 100) {
-          // 上一个包灰度流量不正确，应该告警。
-          logger.error('查找最新稳定包失败', rs)
-        }
-      }
+      })
       logger.info('updateCheck success')
-
-      delete rs.packageId
-      delete rs.rollout
-      delete rs.whiteList
-      delete rs.releaseId
-      delete rs.channelReleaseId
       res.send({ updateInfo: rs })
     } catch (e) {
       if (e instanceof AppError) {
@@ -96,6 +70,78 @@ indexRouter.get(
       } else {
         next(e)
       }
+    }
+  },
+)
+
+indexRouter.post(
+  '/batchUpdateCheck',
+  async (
+    req: Req<
+      void,
+      {
+        appVersion: string
+        clientUniqueId: string
+        items: Array<{
+          deploymentKey: string
+          label?: string
+          packageHash?: string
+          basePackageHash?: string
+          commonHash?: string
+        }>
+      },
+      void
+    >,
+    res,
+    next,
+  ) => {
+    const { logger, body } = req
+    logger.info('batchUpdateCheck', { itemCount: body?.items?.length })
+    const { appVersion, clientUniqueId, items } = body
+
+    if (!appVersion || !clientUniqueId) {
+      return res.status(400).send('appVersion 和 clientUniqueId 不能为空')
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).send('items 不能为空')
+    }
+    if (items.length > 20) {
+      return res.status(400).send('items 数量不能超过 20')
+    }
+
+    try {
+      const results = await Promise.allSettled(
+        items.map((item) =>
+          clientManager.updateCheckForClient({
+            deploymentKey: item.deploymentKey,
+            appVersion,
+            label: item.label ?? '',
+            packageHash: item.packageHash ?? '',
+            clientUniqueId,
+            // basePackageHash 为接口入参名，对应内部字段 builtInPackageHash（内置包 hash），非必传
+            builtInPackageHash: item.basePackageHash ?? '',
+            commonHash: item.commonHash,
+            logger,
+          }),
+        ),
+      )
+
+      const updateInfos = results.map((result, index) => {
+        if (result.status === 'rejected') {
+          logger.error('batchUpdateCheck item failed', {
+            deploymentKey: items[index].deploymentKey,
+            error: result.reason,
+          })
+        }
+        return {
+          deploymentKey: items[index].deploymentKey,
+          updateInfo: result.status === 'fulfilled' ? result.value : null,
+        }
+      })
+
+      res.send({ updateInfos })
+    } catch (e) {
+      next(e)
     }
   },
 )

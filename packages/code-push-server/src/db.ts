@@ -33,6 +33,11 @@ const argv = yargs
     '$0 upgrade --dbname codepush --dbhost localhost --dbuser root --dbpassword 123456 --dbport 3306',
     '升级code-push-server数据库',
   )
+  .option('dbport', {
+    type: 'number',
+    default: 3306,
+    description: 'Database port',
+  })
   .default({
     dbname: 'codepush',
     dbhost: 'localhost',
@@ -47,7 +52,7 @@ const command = argv._[0]
 const dbname = argv.dbname ? argv.dbname : 'codepush'
 const dbhost = argv.dbhost ? argv.dbhost : 'localhost'
 const dbuser = argv.dbuser ? argv.dbuser : 'root'
-const dbport = argv.dbport ? argv.dbport : 3306
+const dbport = argv.dbport
 const { dbpassword } = argv
 
 if (command === 'init') {

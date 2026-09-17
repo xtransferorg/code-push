@@ -45,3 +45,11 @@ export const IS_BASE_BUNDLE_NO = 0
 
 // 和数据库中的 versions 一致，如果不一致会导致启动失败
 export const CURRENT_DB_VERSION = '0.5.0'
+
+export const DELIVERY_TYPE_DYNAMIC = 'DYNAMIC'
+export const DELIVERY_TYPE_INNER = 'INNER'
+
+// app版本审核状态
+export const APP_REVIEW_STATUS_INIT = 0
+export const APP_REVIEW_STATUS_AUDIT_PASSED = 1
+export const APP_REVIEW_STATUS_RELEASED = 2

@@ -13,6 +13,38 @@ import Logger from './Logger'
 
 const TAG = 'CodePushNativeModule-FileUtils: '
 
+export enum CopyConflictMode {
+  FAIL = 0,        // 冲突就报错
+  OVERWRITE = 1,   // 冲突时覆盖（推荐）
+  SKIP = 2,        // 冲突时跳过
+}
+/**
+ * 把 srcDir 下的所有内容（文件 + 子目录，递归）复制到 destDir 下。
+ *
+ * 例：
+ *   srcDir  = /data/.../unzipped
+ *   destDir = /data/.../3a0b9b626...
+ *   结果：destDir 下出现 release_harmony/oh.xt-app-main.bundle 等
+ *
+ * 健壮性保证：
+ *  - srcDir 不存在 / 不是目录 → 抛错（明确报）
+ *  - destDir 不存在 → 自动递归创建
+ *  - srcDir === destDir 或 destDir 是 srcDir 的子目录 → 拒绝执行，避免无限递归
+ *  - 单个文件复制失败默认不会中断整体（除非 stopOnError=true）
+ *  - 全过程不静默吞异常，每个失败都会 Logger 记录
+ */
+export interface CopyDirContentsOptions {
+  conflict?: CopyConflictMode    // 默认 OVERWRITE
+  stopOnError?: boolean          // 单文件失败是否立刻终止，默认 false（尽量复制完）
+}
+export interface CopyDirContentsResult {
+  totalFiles: number
+  copiedFiles: number
+  totalDirs: number
+  createdDirs: number
+  failed: Array<{ src: string; dest: string; err: string }>
+}
+
 export default class FileUtils {
   // 将源路径下的目录内容复制到目标路径
   static copyDirectoryContents(
@@ -84,6 +116,7 @@ export default class FileUtils {
   }
   //删除指定路径下的目录。
   static deleteDirectoryAtPath(directoryPath: string): void {
+    console.log(`[Preload]-FileUtils.deleteDirectoryAtPath:directoryPath=${directoryPath}`)
     if (directoryPath == null) {
       Logger.info(
         TAG,
@@ -217,5 +250,121 @@ export default class FileUtils {
     if (!fs.accessSync(filePath)) {
       Logger.info(TAG, 'downloadPackage-文件不存在')
     }
+  }
+
+  static copyEntriesInFolder(
+    srcDir: string,
+    destDir: string,
+    options: CopyDirContentsOptions = {},
+  ): CopyDirContentsResult {
+    const conflict = options.conflict ?? CopyConflictMode.OVERWRITE
+    const stopOnError = options.stopOnError ?? false
+    const result: CopyDirContentsResult = {
+      totalFiles: 0, copiedFiles: 0,
+      totalDirs: 0,  createdDirs: 0,
+      failed: [],
+    }
+    // 1. 入参校验
+    if (!srcDir || !destDir) {
+      throw new Error(`copyDirContents: invalid args, srcDir=${srcDir}, destDir=${destDir}`)
+    }
+    // 规范化路径，去掉尾部 '/'，方便后续比较
+    const src = srcDir.endsWith('/') ? srcDir.slice(0, -1) : srcDir
+    const dest = destDir.endsWith('/') ? destDir.slice(0, -1) : destDir
+    if (!fs.accessSync(src)) {
+      throw new Error(`copyDirContents: srcDir not exist: ${src}`)
+    }
+    const srcStat = fs.statSync(src)
+    if (!srcStat.isDirectory()) {
+      throw new Error(`copyDirContents: srcDir is not a directory: ${src}`)
+    }
+    // 自拷贝 / 父拷到子目录会造成无限递归，拒绝执行
+    if (src === dest || dest.startsWith(src + '/')) {
+      throw new Error(`copyDirContents: dest is same as or inside src: src=${src}, dest=${dest}`)
+    }
+    // 2. 目标目录不存在就建
+    if (!fs.accessSync(dest)) {
+      try {
+        fs.mkdirSync(dest, true)
+        result.createdDirs++
+      } catch (e) {
+        throw new Error(`copyDirContents: mkdir dest failed: ${dest}, err=${JSON.stringify(e)}`)
+      }
+    } else {
+      if (!fs.statSync(dest).isDirectory()) {
+        throw new Error(`copyDirContents: dest exists but is not a directory: ${dest}`)
+      }
+    }
+    // 3. 递归内部函数
+    const walk = (curSrc: string, curDest: string): boolean => {
+      let entries: string[]
+      try {
+        entries = fs.listFileSync(curSrc, { recursion: false, listNum: 0 })
+      } catch (e) {
+        result.failed.push({ src: curSrc, dest: curDest, err: `listFile: ${JSON.stringify(e)}` })
+        Logger.error(TAG, `copyDirContents listFile failed: ${curSrc}, ${JSON.stringify(e)}`)
+        return !stopOnError
+      }
+      for (const name of entries) {
+        const s = `${curSrc}/${name}`
+        const d = `${curDest}/${name}`
+        let st: fs.Stat
+        try {
+          st = fs.statSync(s)
+        } catch (e) {
+          result.failed.push({ src: s, dest: d, err: `stat: ${JSON.stringify(e)}` })
+          Logger.error(TAG, `copyDirContents stat failed: ${s}, ${JSON.stringify(e)}`)
+          if (stopOnError) return false
+          continue
+        }
+        if (st.isDirectory()) {
+          result.totalDirs++
+          try {
+            if (!fs.accessSync(d)) {
+              fs.mkdirSync(d, true)
+              result.createdDirs++
+            } else if (!fs.statSync(d).isDirectory()) {
+              throw new Error(`dest exists but not a dir: ${d}`)
+            }
+          } catch (e) {
+            result.failed.push({ src: s, dest: d, err: `mkdir: ${JSON.stringify(e)}` })
+            Logger.error(TAG, `copyDirContents mkdir failed: ${d}, ${JSON.stringify(e)}`)
+            if (stopOnError) return false
+            continue
+          }
+          if (!walk(s, d) && stopOnError) return false
+        } else if (st.isFile()) {
+          result.totalFiles++
+          try {
+            if (fs.accessSync(d)) {
+              if (conflict === CopyConflictMode.SKIP) {
+                Logger.info(TAG, `copyDirContents skip existing: ${d}`)
+                continue
+              }
+              if (conflict === CopyConflictMode.FAIL) {
+                throw new Error(`dest file already exists: ${d}`)
+              }
+              // OVERWRITE: copyFileSync 默认会覆盖
+            }
+            fs.copyFileSync(s, d, 0)
+            result.copiedFiles++
+          } catch (e) {
+            result.failed.push({ src: s, dest: d, err: `copyFile: ${JSON.stringify(e)}` })
+            Logger.error(TAG, `copyDirContents copyFile failed: ${s} -> ${d}, ${JSON.stringify(e)}`)
+            if (stopOnError) return false
+          }
+        } else {
+          Logger.info(TAG, `copyDirContents skip non-regular entry: ${s}`)
+        }
+      }
+      return true
+    }
+    walk(src, dest)
+    Logger.info(
+      TAG,
+      `copyDirContents done: dirs=${result.createdDirs}/${result.totalDirs}, ` +
+        `files=${result.copiedFiles}/${result.totalFiles}, failed=${result.failed.length}`,
+    )
+    return result
   }
 }

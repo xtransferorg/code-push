@@ -54,9 +54,22 @@ export interface PackageInfo {
   originalLabel?: string
   whiteList?: string
   channelReleaseId?: string
+  commonHash?: string
   bundleName?: string
   force?: boolean
   appBinaryTime?: string
+  packagePath?: string
+  packageDiff?: PackagesDiffInterface
+}
+
+export interface PackagesDiffInterface {
+  id: number
+  packageId: number
+  diffAgainstPackageHash: string
+  diffBlobUrl: string
+  diffSize: number
+  createdAt: Date
+  updatedAt: Date
 }
 
 export interface ReleaseInfo {
@@ -74,6 +87,11 @@ export interface UpdateCheckResponse extends PackageInfo {
   downloadDiffUrl?: string
   downloadDiffSize?: number
   isDiffAvailable?: boolean
+  currentPackageDiff?: {
+    downloadDiffUrl: string,
+    downloadDiffSize: number,
+    isDiffAvailable: boolean
+  }
 }
 
 /*out*/
@@ -92,6 +110,7 @@ export interface UpdateCheckRequest {
   label?: string
   packageHash?: string
   basePackageHash?: string
+  commonHash?: string
 }
 
 /*out*/

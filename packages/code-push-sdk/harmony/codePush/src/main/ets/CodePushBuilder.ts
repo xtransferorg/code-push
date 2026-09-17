@@ -23,6 +23,7 @@ export class CodePushBuilder {
     private bundleIntlInfo: any,
     private deploymentKey: string,
     private mServerUrl: string,
+    private commonHash: string,
   ) {
     let bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION
     let bundleInfo = bundleManager.getBundleInfoForSelfSync(bundleFlags)
@@ -45,7 +46,7 @@ export class CodePushBuilder {
     return this
   }
 
-  public build(rnContext: UITurboModuleContext) {
+  public build(rnContext: UITurboModuleContext | common.UIAbilityContext) {
     let codePush = CodePushBuilder.mCodePushs.get(this.deploymentKey)
     if (codePush) {
       // 保证一个 deploymentKey 对应一个 CodePush
@@ -58,6 +59,7 @@ export class CodePushBuilder {
       this.deploymentKey,
       this.mIsDebugMode,
       this.mServerUrl,
+      this.commonHash,
       rnContext,
       this.mPublicKeyResourceDescriptor,
     )

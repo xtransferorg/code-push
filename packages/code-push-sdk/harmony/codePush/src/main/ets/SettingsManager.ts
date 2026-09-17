@@ -11,16 +11,32 @@ import { CodePushUnknownException } from './CodePushUnknownException'
 import { CodePushMalformedDataException } from './CodePushMalformedDataException'
 import common from '@ohos.app.ability.common'
 import Logger from './Logger'
+import { log } from './nativeCodePush/Logging'
 
 const TAG = 'CodePushNativeModule-SettingsManager: '
 
 export class SettingsManager {
   private preferences: dataPreferences.Preferences | null = null
 
-  constructor(context: common.UIAbilityContext, deploymentKey: string) {
-    this.preferences = dataPreferences.getPreferencesSync(context, {
-      name: deploymentKey + CodePushConstants.CODE_PUSH_PREFERENCES,
-    })
+  private bundleName: string = ""
+
+  constructor(private context: common.UIAbilityContext, bundleName:string, deploymentKey: string) {
+    console.log(`[Preload]-SettingsManager.constructor:deploymentKey=${deploymentKey}`)
+    this.init(bundleName, deploymentKey)
+  }
+
+  private init(bundleName: string, deploymentKey: string) {
+    console.log(`[Preload]-SettingsManager.init:deploymentKey=${deploymentKey}, this.preferences=${this.preferences}`)
+    this.bundleName = bundleName
+    if (deploymentKey && !this.preferences) {
+      this.preferences = dataPreferences.getPreferencesSync(this.context, {
+        name: deploymentKey + CodePushConstants.CODE_PUSH_PREFERENCES,
+      })
+    }
+  }
+
+  public setBundleInfo(bundleName: string, deploymentKey: string) {
+    this.init(bundleName, deploymentKey)
   }
 
   public getFailedUpdates(): Array<Record<string, any>> {
@@ -45,11 +61,11 @@ export class SettingsManager {
       )
       // Unrecognized data format, clear and replace with expected format.
       const emptyArray: Array<Record<string, any>> = new Array()
-      this.preferences.put(
+      this.preferences.putSync(
         CodePushConstants.FAILED_UPDATES_KEY,
         emptyArray.toString(),
       )
-      this.preferences?.flush()
+      this.preferences?.flushSync()
       return emptyArray
     }
   }
@@ -61,7 +77,7 @@ export class SettingsManager {
     ) as string
     Logger.info(
       TAG,
-      `installPackage--pendingUpdateString=${pendingUpdateString}`,
+      `[Preload]-SettingManager.installPackage--pendingUpdateString=${pendingUpdateString}`,
     )
     if (pendingUpdateString === null) {
       return null
@@ -139,14 +155,39 @@ export class SettingsManager {
     }
   }
 
+  public isPendingHash(packageHash: string | null): boolean {
+    Logger.info(
+      TAG,
+      `installPackage--isPendingUpdate-entry=${JSON.stringify(this.preferences)}`,
+    )
+    const pendingUpdate: Record<string, string> = this.getPendingUpdate()
+    Logger.info(TAG, `installPackage--pendingUpdate=${pendingUpdate}`)
+    try {
+      return (
+        pendingUpdate != null &&
+          (packageHash == null ||
+            (pendingUpdate[
+            CodePushConstants.PENDING_UPDATE_HASH_KEY
+            ] as unknown as string) === packageHash)
+      )
+    } catch (e) {
+      throw new CodePushUnknownException(
+        'Unable to read pending update metadata in isPendingUpdate.',
+        e,
+      )
+    }
+  }
+
   public removeFailedUpdates(): void {
-    this.preferences.delete(CodePushConstants.FAILED_UPDATES_KEY)
-    this.preferences?.flush()
+    this.preferences.deleteSync(CodePushConstants.FAILED_UPDATES_KEY)
+    this.preferences?.flushSync()
   }
 
   public removePendingUpdate(): void {
-    this.preferences?.delete(CodePushConstants.PENDING_UPDATE_KEY)
-    this.preferences?.flush()
+
+    log(`[Preload]-SettingManager.initializeUpdateAfterRestart.${TAG}.removePendingUpdate:bundleName=${this.bundleName}}`)
+    this.preferences?.deleteSync(CodePushConstants.PENDING_UPDATE_KEY)
+    this.preferences?.flushSync()
   }
 
   public saveFailedUpdate(failedPackage: Record<string, any>): void {
@@ -190,11 +231,11 @@ export class SettingsManager {
     }
 
     failedUpdates.push(failedPackage)
-    this.preferences.put(
+    this.preferences.putSync(
       CodePushConstants.FAILED_UPDATES_KEY,
       JSON.stringify(failedUpdates),
     )
-    this.preferences?.flush()
+    this.preferences?.flushSync()
   }
 
   public getLatestRollbackInfo(): Record<string, any> | null {
@@ -240,11 +281,11 @@ export class SettingsManager {
         Date.now()
       latestRollbackInfo[CodePushConstants.LATEST_ROLLBACK_COUNT_KEY] =
         count + 1
-      this.preferences.put(
+      this.preferences.putSync(
         CodePushConstants.LATEST_ROLLBACK_INFO_KEY,
         JSON.stringify(latestRollbackInfo),
       )
-      this.preferences?.flush()
+      this.preferences?.flushSync()
     } catch (error) {
       throw new CodePushUnknownException(
         'Unable to save latest rollback info.',
@@ -254,6 +295,7 @@ export class SettingsManager {
   }
 
   public savePendingUpdate(packageHash: string, isLoading: boolean): void {
+    log(`[Preload]-SettingManager.savePendingUpdate=====, packageHash=${packageHash}, isLoading=${isLoading}, bundleName=${this.bundleName}`)
     const pendingUpdate: object = {}
     pendingUpdate[CodePushConstants.PENDING_UPDATE_HASH_KEY] = packageHash
     pendingUpdate[CodePushConstants.PENDING_UPDATE_IS_LOADING_KEY] = isLoading
@@ -266,7 +308,7 @@ export class SettingsManager {
         CodePushConstants.PENDING_UPDATE_KEY,
         JSON.stringify(pendingUpdate),
       )
-      this.preferences?.flush()
+      this.preferences?.flushSync()
     } catch (error) {
       throw new CodePushUnknownException(
         'Unable to save pending update.',
