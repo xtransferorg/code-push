@@ -17,7 +17,7 @@ import {
   RNOHError,
   UITurboModuleContext,
 } from '@rnoh/react-native-openharmony/ts'
-import { BundleInfo, RN_INSTANCE_MANAGER } from 'xrn-multi-bundle/ts'
+import { BundleInfo, RN_INSTANCE_MANAGER } from '@xrnjs/multi-bundle/ts'
 import { log } from './nativeCodePush/Logging'
 import { JSON } from '@kit.ArkTS'
 

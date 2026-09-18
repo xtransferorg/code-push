@@ -8,6 +8,6 @@
   "main": "index.ets",
   "dependencies": {
     "@rnoh/react-native-openharmony": "file:../react_native_openharmony",
-    "xrn-multi-bundle": "file:../xrn_multi_bundle"
+    "@xrnjs/multi-bundle": "file:../xrn_multi_bundle"
   }
 }

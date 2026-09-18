@@ -17,7 +17,7 @@ import { CodePushMalformedDataException } from '../CodePushMalformedDataExceptio
 import { CodePushUnknownException } from '../CodePushUnknownException'
 import { TM } from '@rnoh/react-native-openharmony/generated/ts'
 import { window } from '@kit.ArkUI'
-import { RN_INSTANCE_MANAGER } from 'xrn-multi-bundle/ts'
+import { RN_INSTANCE_MANAGER } from '@xrnjs/multi-bundle/ts'
 import deviceInfo from '@ohos.deviceInfo'
 import Logger from "../Logger"
 import { common } from '@kit.AbilityKit'

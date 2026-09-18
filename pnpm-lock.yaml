@@ -269,6 +269,9 @@ importers:
       '@react-native-oh/react-native-harmony':
         specifier: 0.72.38
         version: 0.72.38(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))
+      '@xrnjs/multi-bundle':
+        specifier: 0.1.0
+        version: 0.1.0(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0)
       archiver:
         specifier: latest
         version: 8.0.0
@@ -308,9 +311,6 @@ importers:
       typescript:
         specifier: ^2.1.5
         version: 2.9.2
-      xrn-multi-bundle:
-        specifier: 0.1.1-beta.6
-        version: 0.1.1-beta.6(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0)
 
   packages/code-push-server:
     dependencies:
@@ -1747,6 +1747,12 @@ packages:
 
   '@ungap/promise-all-settled@1.1.2':
     resolution: {integrity: sha512-sL/cEvJWAnClXw0wHk85/2L0G6Sj8UB0Ctc1TEMbKSsmpRosqhwj9gWgFRZSrBr2f9tiXISwNhCPmlfqUqyb9Q==}
+
+  '@xrnjs/multi-bundle@0.1.0':
+    resolution: {integrity: sha512-bBd7bkvF44voS8ElwYZHDIVEIKj5opZBBZw+6Yp23ut/38ZeUk0Thm/gM2DjtluWWwNwgcza5hndmNgoiczWrw==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
 
   Base64@0.2.1:
     resolution: {integrity: sha512-reGEWshDmTDQDsCec/HduOO9Wyj6yMOupMfhIf3ugN1TDlK2NQW4DDJSqNNtp380SNcvRfXtO8HSCQot0d0SMw==}
@@ -9230,12 +9236,6 @@ packages:
   xregexp@2.0.0:
     resolution: {integrity: sha512-xl/50/Cf32VsGq/1R8jJE5ajH1yMCQkpmoS10QbFZWl2Oor4H0Me64Pu2yxvsRWK3m6soJbmGfzSR7BYmDcWAA==}
 
-  xrn-multi-bundle@0.1.1-beta.6:
-    resolution: {integrity: sha512-21oYS4iNiyuNopXgktd25TCoN8KDcoOfdWCC3PSScn8Zvwxvc/erov8dFaanLPf0LIQS/M9ptaqglptDON3xEQ==}
-    peerDependencies:
-      react: '*'
-      react-native: '*'
-
   xtend@3.0.0:
     resolution: {integrity: sha512-sp/sT9OALMjRW1fKDlPeuSZlDQpkqReA0pyJukniWbTGoEKefHxhGJynE3PNhUMlcM8qWIjPwecwCw4LArS5Eg==}
     engines: {node: '>=0.4'}
@@ -11163,6 +11163,11 @@ snapshots:
       eslint-visitor-keys: 3.4.3
 
   '@ungap/promise-all-settled@1.1.2': {}
+
+  '@xrnjs/multi-bundle@0.1.0(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
+      react-native: 0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0)
 
   Base64@0.2.1: {}
 
@@ -20245,11 +20250,6 @@ snapshots:
   xmldom@0.1.31: {}
 
   xregexp@2.0.0: {}
-
-  xrn-multi-bundle@0.1.1-beta.6(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0):
-    dependencies:
-      react: 19.3.0
-      react-native: 0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0)
 
   xtend@3.0.0:
     optional: true
