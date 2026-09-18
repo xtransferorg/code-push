@@ -28,8 +28,6 @@ import deviceInfo from '@ohos.deviceInfo'
 
 import Logger from './Logger'
 import { log } from './nativeCodePush/Logging'
-import { BundleInfoUpdatable } from 'xrn-modules-core/ts'
-import { BundleInfoManager } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfoManager'
 import { CodePushBuilder } from './CodePushBuilder'
 
 const TAG = 'CodePushNativeModule: '
@@ -41,7 +39,7 @@ function generateUUID(): string {
 
 export class CodePushNativeModule
   extends UITurboModule
-  implements TM.RTNCodePush.Spec, BundleInfoUpdatable
+  implements TM.RTNCodePush.Spec
 {
   private mBinaryContentsHash: string = ''
   private mClientUniqueId: string = ''
@@ -160,21 +158,6 @@ export class CodePushNativeModule
       },
     )
     this.mCodePush = codePush
-  }
-
-  updateBundleInfo(bundleName: string): void {
-    if (this.mCodePush) {
-      return
-    }
-    const bundleInfo = BundleInfoManager.INSTANCE.getBundleInfo(bundleName)
-    let codePush = bundleInfo ? new CodePushBuilder(
-      bundleInfo,
-      bundleInfo?.getCodePushKey(),
-      this.serverUrl,
-      this.commonHash
-    ).build(this.ctx) : null
-    console.log(`[Preload]-CodePushNativeModule====.updateBundleInfo:bundleName=${bundleName}, bundleInfo=${JSON.stringify(bundleInfo)}`)
-    this.init(codePush)
   }
 
   async downloadUpdate(

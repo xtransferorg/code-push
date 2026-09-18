@@ -59,8 +59,7 @@
     "run-sequence": "latest",
     "tslint": "^4.3.1",
     "typescript": "^2.1.5",
-    "xrn-multi-bundle": "0.1.1-beta.6",
-    "xrn-modules-core": "5.0.0"
+    "xrn-multi-bundle": "0.1.1-beta.6"
   },
   "peerDependencies": {
     "xrn-multi-bundle": "*"

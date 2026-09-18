@@ -308,9 +308,6 @@ importers:
       typescript:
         specifier: ^2.1.5
         version: 2.9.2
-      xrn-modules-core:
-        specifier: 5.0.0
-        version: 5.0.0(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0)
       xrn-multi-bundle:
         specifier: 0.1.1-beta.6
         version: 0.1.1-beta.6(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0)
@@ -9232,12 +9229,6 @@ packages:
 
   xregexp@2.0.0:
     resolution: {integrity: sha512-xl/50/Cf32VsGq/1R8jJE5ajH1yMCQkpmoS10QbFZWl2Oor4H0Me64Pu2yxvsRWK3m6soJbmGfzSR7BYmDcWAA==}
-
-  xrn-modules-core@5.0.0:
-    resolution: {integrity: sha512-eXfkzHeGzLRA54N2/oWFcQB/gC1I28/huJV5T+D7IXcKW386XOcUsw3u5vZNy1WotaRVPd8ZnH5yCCMwj77NVQ==}
-    peerDependencies:
-      react: '*'
-      react-native: '*'
 
   xrn-multi-bundle@0.1.1-beta.6:
     resolution: {integrity: sha512-21oYS4iNiyuNopXgktd25TCoN8KDcoOfdWCC3PSScn8Zvwxvc/erov8dFaanLPf0LIQS/M9ptaqglptDON3xEQ==}
@@ -20254,11 +20245,6 @@ snapshots:
   xmldom@0.1.31: {}
 
   xregexp@2.0.0: {}
-
-  xrn-modules-core@5.0.0(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0):
-    dependencies:
-      react: 19.3.0
-      react-native: 0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0)
 
   xrn-multi-bundle@0.1.1-beta.6(react-native@0.72.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(react@19.3.0))(react@19.3.0):
     dependencies:
