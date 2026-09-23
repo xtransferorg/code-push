@@ -14,7 +14,7 @@ import { UpdateCheckRequest } from './entity/UpdateCheckRequest';
 import { UpdateCheckResponse } from './entity/UpdateCheckResponse';
 import { DownloadReportRequest } from './entity/DownloadReportRequest';
 import { DeploymentReportRequest } from './entity/DeploymentReportRequest';
-import { HttpRequestError } from 'xrn-multi-bundle/src/main/ets/bundle/remoteBundle/http/HttpRequestError';
+import { HttpRequestError } from '@xrnjs/multi-bundle/src/main/ets/bundle/remoteBundle/http/HttpRequestError';
 import { BatchUpdateCheckManager } from '../../batchUpdateCheck/BatchUpdateCheckManager'
 import { isCodePushLabelNewer } from '../../Utils'
 

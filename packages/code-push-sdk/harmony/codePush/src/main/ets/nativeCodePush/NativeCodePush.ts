@@ -6,7 +6,7 @@ import { CodePush } from "../CodePush"
 import { DEFAULT_ROLLBACK_RETRY_OPTIONS,
   DEFAULT_UPDATE_CHECK_TIMEOUT,
   DEFAULT_UPDATE_DIALOG, SyncStatus} from "./NativeCodePushConstant"
-import { BundleInfo } from "xrn-multi-bundle/src/main/ets/bundle/BundleInfo"
+import { BundleInfo } from "@xrnjs/multi-bundle/src/main/ets/bundle/BundleInfo"
 import { CodePushBuilder } from "../CodePushBuilder"
 import { Configuration } from "./NativeCodePushConfig"
 import { CodePushInstallMode } from "../CodePushInstallMode"

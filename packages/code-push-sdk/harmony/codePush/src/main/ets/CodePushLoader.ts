@@ -13,14 +13,14 @@ import { DEFAULT_ROLLBACK_RETRY_OPTIONS, SyncStatus,
   UPDATE_CHECK_TIMEOUT } from './nativeCodePush/NativeCodePushConstant'
 import { RemotePackage } from './nativeCodePush/core/RemotePackage'
 import { Callback, emitter } from '@kit.BasicServicesKit'
-import { BundleInfo } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfo'
+import { BundleInfo } from '@xrnjs/multi-bundle/src/main/ets/bundle/BundleInfo'
 import { rawfileExists, getRawFileBundleName } from './nativeCodePush/NativeCodePushUtil'
 import { JSON } from '@kit.ArkTS'
 import { CodePushConstants } from '../../../ts'
 import { CodePushUtils } from './CodePushUtils'
 import { CodePushUpdateUtils } from './CodePushUpdateUtils'
 import { getGlobalErrorCallback } from './CodePush'
-import { Preloadable } from 'xrn-multi-bundle/src/main/ets/bundle/Preloadable'
+import { Preloadable } from '@xrnjs/multi-bundle/src/main/ets/bundle/Preloadable'
 
 const TAG = 'CodePushLoader:'
 const SYNC_STALE_TIME_MS = 5 * 60 * 1000

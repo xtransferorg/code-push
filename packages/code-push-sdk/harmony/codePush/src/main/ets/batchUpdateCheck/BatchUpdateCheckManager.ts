@@ -6,8 +6,8 @@ import { request, HttpTimeoutOption } from '../nativeCodePush/http/HttpRequest'
 import { http } from "@kit.NetworkKit";
 import { CodePushUpdateManager } from '../CodePushUpdateManager'
 import { CodePushUpdateUtils } from '../CodePushUpdateUtils'
-import { BundleInfoManager } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfoManager'
-import { BundleInfo } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfo'
+import { BundleInfoManager } from '@xrnjs/multi-bundle/src/main/ets/bundle/BundleInfoManager'
+import { BundleInfo } from '@xrnjs/multi-bundle/src/main/ets/bundle/BundleInfo'
 import { BatchUpdateCacheDataType } from './BatchUpdateCacheDataType'
 import { getClientUniqueId } from '../Utils'
 

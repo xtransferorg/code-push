@@ -20,13 +20,11 @@ import { bundleManager } from '@kit.AbilityKit'
 import Logger from './Logger'
 import { CodePushConstants } from './CodePushConstants'
 import { getCurrentAppVersionName } from './Utils'
-import { BundleInfoUpdatable } from 'xrn-modules-core/ts'
-import { BundleInfoManager } from 'xrn-multi-bundle/src/main/ets/bundle/BundleInfoManager'
 import { JSON } from '@kit.ArkTS'
 
 const TAG = 'CodePushNativeModule-CodePushPackage: '
 
-class CodePushModulesFactory extends UITurboModuleFactory implements BundleInfoUpdatable {
+class CodePushModulesFactory extends UITurboModuleFactory {
   constructor(
     ctx: UITurboModuleContext,
     private bundleInfo: any,
@@ -34,14 +32,6 @@ class CodePushModulesFactory extends UITurboModuleFactory implements BundleInfoU
     private commonHash: string,
   ) {
     super(ctx)
-  }
-
-  updateBundleInfo(bundleName: string): void {
-    console.log(`[Preload]-CodePushModulesFactory.updateBundleInfo:bundleName=${bundleName}, bundleInfo=${JSON.stringify(this.bundleInfo)}`)
-    if (!this.bundleInfo) {
-      const bundleInfo = BundleInfoManager.INSTANCE.getBundleInfo(bundleName)
-      this.bundleInfo = bundleInfo
-    }
   }
 
   createTurboModule(name: string): UITurboModule | null {
